@@ -1,13 +1,10 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { AppError, ERRORS } from '../../shared/errors';
 import { Role, UserStatus } from '../../shared/constants/roles.enum';
 import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
@@ -34,8 +31,7 @@ export class UsersService {
     const max = this.configService.get<number>('maxUsersPerTenant') ?? 20;
     const count = await this.countActiveInTenant(tenantId);
     if (count >= max) {
-      throw new ConflictException({
-        code: 'USER_LIMIT_REACHED',
+      throw new AppError(ERRORS.USER.LIMIT_REACHED, {
         message: `Maximum ${max} users per store reached`,
       });
     }
@@ -81,7 +77,7 @@ export class UsersService {
 
     const existingEmail = await this.findByEmail(dto.email);
     if (existingEmail) {
-      throw new ConflictException('Email already in use');
+      throw new AppError(ERRORS.USER.EMAIL_IN_USE);
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -174,7 +170,7 @@ export class UsersService {
 
     const user = await this.findByIdInTenant(tenantId, id);
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new AppError(ERRORS.USER.NOT_FOUND);
     }
     if (dto.username) user.username = dto.username;
     if (dto.role) user.role = dto.role;
@@ -187,9 +183,27 @@ export class UsersService {
 
     const user = await this.findByIdInTenant(tenantId, id);
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new AppError(ERRORS.USER.NOT_FOUND);
     }
     user.status = UserStatus.DISABLED;
+    await user.save();
+    return user;
+  }
+
+  async activate(tenantId: string, id: string): Promise<UserDocument> {
+    this.logger.step('UsersService.activate', { tenantId, id });
+
+    const user = await this.findByIdInTenant(tenantId, id);
+    if (!user) {
+      throw new AppError(ERRORS.USER.NOT_FOUND);
+    }
+    if (user.status === UserStatus.ACTIVE) {
+      throw new AppError(ERRORS.USER.ALREADY_ACTIVE);
+    }
+
+    await this.assertCanCreateUser(tenantId);
+
+    user.status = UserStatus.ACTIVE;
     await user.save();
     return user;
   }
@@ -203,7 +217,7 @@ export class UsersService {
 
     const user = await this.findByIdInTenant(tenantId, id);
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new AppError(ERRORS.USER.NOT_FOUND);
     }
     user.password_hash = await bcrypt.hash(newPassword, 10);
     await user.save();
@@ -218,11 +232,11 @@ export class UsersService {
 
     const user = await this.findById(userId);
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new AppError(ERRORS.USER.NOT_FOUND);
     }
     const valid = await bcrypt.compare(oldPassword, user.password_hash);
     if (!valid) {
-      throw new ConflictException('Old password is incorrect');
+      throw new AppError(ERRORS.USER.OLD_PASSWORD_INCORRECT);
     }
     user.password_hash = await bcrypt.hash(newPassword, 10);
     await user.save();

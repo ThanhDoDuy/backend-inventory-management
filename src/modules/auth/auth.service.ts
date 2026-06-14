@@ -1,8 +1,4 @@
-import {
-  ConflictException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
@@ -10,6 +6,7 @@ import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { AppError, ERRORS } from '../../shared/errors';
 import { RedisService } from '../../infrastructure/redis/redis.service';
 import { UserStatus } from '../../shared/constants/roles.enum';
 import { JwtPayload } from '../../shared/interfaces/jwt-payload.interface';
@@ -51,7 +48,7 @@ export class AuthService {
 
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
-      throw new ConflictException('Email already in use');
+      throw new AppError(ERRORS.USER.EMAIL_IN_USE);
     }
 
     const slug = this.tenantsService.slugify(dto.tenantName);
@@ -90,10 +87,10 @@ export class AuthService {
         email: dto.email,
         reason: 'user_not_found',
       });
-      throw new UnauthorizedException('Invalid credentials');
+      throw new AppError(ERRORS.AUTH.INVALID_CREDENTIALS);
     }
     if (user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException('User account is disabled');
+      throw new AppError(ERRORS.AUTH.USER_DISABLED);
     }
 
     const valid = await bcrypt.compare(dto.password, user.password_hash);
@@ -102,7 +99,7 @@ export class AuthService {
         email: dto.email,
         reason: 'invalid_password',
       });
-      throw new UnauthorizedException('Invalid credentials');
+      throw new AppError(ERRORS.AUTH.INVALID_CREDENTIALS);
     }
 
     await this.usersService.updateLastLogin(user._id.toString());
@@ -122,12 +119,12 @@ export class AuthService {
       expired_at: { $gt: new Date() },
     });
     if (!stored) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new AppError(ERRORS.AUTH.INVALID_REFRESH_TOKEN);
     }
 
     const user = await this.usersService.findById(stored.user_id.toString());
     if (!user || user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException('User not found or disabled');
+      throw new AppError(ERRORS.AUTH.USER_NOT_FOUND_OR_DISABLED);
     }
 
     const payload: JwtPayload = {
@@ -168,7 +165,7 @@ export class AuthService {
 
     const user = await this.usersService.findById(userId);
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new AppError(ERRORS.AUTH.USER_NOT_FOUND);
     }
     return this.usersService.toProfile(user);
   }
@@ -177,7 +174,7 @@ export class AuthService {
     this.logger.step('AuthService.changePassword', { userId });
 
     if (dto.old_password === dto.new_password) {
-      throw new ConflictException('New password must differ from old password');
+      throw new AppError(ERRORS.AUTH.PASSWORD_UNCHANGED);
     }
     await this.usersService.changePassword(
       userId,

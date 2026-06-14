@@ -1,11 +1,11 @@
 import {
   CanActivate,
   ExecutionContext,
-  ForbiddenException,
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { AppError, ERRORS } from '../errors';
 import { hasPermission } from '../constants/permissions';
 import { PERMISSION_KEY } from '../decorators/require-permission.decorator';
 import { RequestUser } from '../interfaces/request-user.interface';
@@ -29,7 +29,7 @@ export class PermissionsGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<{ user: RequestUser }>();
     const user = request.user;
     if (!user?.tenantId) {
-      throw new ForbiddenException('Tenant context required');
+      throw new AppError(ERRORS.AUTH.TENANT_CONTEXT_REQUIRED);
     }
     if (!hasPermission(user.role, required)) {
       this.logger.warn('PermissionsGuard.canActivate', {
@@ -37,7 +37,9 @@ export class PermissionsGuard implements CanActivate {
         role: user.role,
         permission: required,
       });
-      throw new ForbiddenException(`Permission denied: ${required}`);
+      throw new AppError(ERRORS.AUTH.PERMISSION_DENIED, {
+        message: `Permission denied`,
+      }); 
     }
     return true;
   }

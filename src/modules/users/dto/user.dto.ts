@@ -37,6 +37,12 @@ export class DisableUserDto {
   reason: string;
 }
 
+export class ActivateUserDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
 export class ResetPasswordDto {
   @IsString()
   @MinLength(8)

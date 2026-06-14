@@ -1,8 +1,9 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { AppError, ERRORS } from '../../shared/errors';
 import { Tenant, TenantDocument } from './schemas/tenant.schema';
 import { TenantStatus } from '../../shared/constants/roles.enum';
 
@@ -24,8 +25,7 @@ export class TenantsService {
     const max = this.configService.get<number>('maxTenants') ?? 20;
     const count = await this.countActive();
     if (count >= max) {
-      throw new ConflictException({
-        code: 'TENANT_LIMIT_REACHED',
+      throw new AppError(ERRORS.TENANT.LIMIT_REACHED, {
         message: `Platform capacity reached (${max} stores max)`,
       });
     }

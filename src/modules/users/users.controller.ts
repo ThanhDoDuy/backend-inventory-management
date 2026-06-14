@@ -12,6 +12,7 @@ import { RequirePermission } from '../../shared/decorators/require-permission.de
 import { Role, UserStatus } from '../../shared/constants/roles.enum';
 import type { RequestUser } from '../../shared/interfaces/request-user.interface';
 import {
+  ActivateUserDto,
   CreateUserDto,
   DisableUserDto,
   ResetPasswordDto,
@@ -76,6 +77,17 @@ export class UsersController {
     @Body() _dto: DisableUserDto,
   ) {
     const updated = await this.usersService.disable(user.tenantId, id);
+    return this.usersService.toProfile(updated);
+  }
+
+  @Patch(':id/activate')
+  @RequirePermission('users:delete')
+  async activate(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() _dto: ActivateUserDto,
+  ) {
+    const updated = await this.usersService.activate(user.tenantId, id);
     return this.usersService.toProfile(updated);
   }
 
