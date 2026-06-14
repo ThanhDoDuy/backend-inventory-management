@@ -110,4 +110,21 @@ export const ERRORS = {
       httpStatus: HttpStatus.CONFLICT,
     },
   },
+  RBAC: {
+    ROLE_NOT_FOUND: {
+      errorCode: 5000,
+      message: 'Role not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    INVALID_PERMISSIONS: {
+      errorCode: 5001,
+      message: 'One or more permission codes are invalid',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    SYSTEM_ROLE_PROTECTED: {
+      errorCode: 5002,
+      message: 'System role cannot be modified',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+  },
 } as const satisfies Record<string, Record<string, ErrorDefinition>>;

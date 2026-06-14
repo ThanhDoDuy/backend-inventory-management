@@ -18,6 +18,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { UsersModule } from './modules/users/users.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { RbacModule } from './modules/rbac/rbac.module';
 import { JwtAuthGuard } from './shared/guards/jwt-auth.guard';
 import { PermissionsGuard } from './shared/guards/permissions.guard';
 import { TransformInterceptor } from './shared/interceptors/transform.interceptor';
@@ -48,6 +49,7 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
     TenantsModule,
     UsersModule,
     SettingsModule,
+    RbacModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

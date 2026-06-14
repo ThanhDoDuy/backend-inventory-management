@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator';
 import { RequirePermission } from '../../shared/decorators/require-permission.decorator';
+import { PERMISSIONS } from '../../shared/constants/permission.constants';
 import { Role, UserStatus } from '../../shared/constants/roles.enum';
 import type { RequestUser } from '../../shared/interfaces/request-user.interface';
 import {
@@ -25,7 +26,7 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Get()
-  @RequirePermission('users:view')
+  @RequirePermission(PERMISSIONS.USERS.VIEW)
   list(
     @CurrentUser() user: RequestUser,
     @Query('page') page?: string,
@@ -45,21 +46,21 @@ export class UsersController {
   }
 
   @Get(':id')
-  @RequirePermission('users:view')
+  @RequirePermission(PERMISSIONS.USERS.VIEW)
   async getOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     const found = await this.usersService.findByIdInTenant(user.tenantId, id);
     return found ? this.usersService.toProfile(found) : null;
   }
 
   @Post()
-  @RequirePermission('users:create')
+  @RequirePermission(PERMISSIONS.USERS.CREATE)
   async create(@CurrentUser() user: RequestUser, @Body() dto: CreateUserDto) {
     const created = await this.usersService.create(user.tenantId, dto);
     return this.usersService.toProfile(created);
   }
 
   @Patch(':id')
-  @RequirePermission('users:update')
+  @RequirePermission(PERMISSIONS.USERS.UPDATE)
   async update(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,
@@ -70,7 +71,7 @@ export class UsersController {
   }
 
   @Patch(':id/disable')
-  @RequirePermission('users:delete')
+  @RequirePermission(PERMISSIONS.USERS.DELETE)
   async disable(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,
@@ -81,7 +82,7 @@ export class UsersController {
   }
 
   @Patch(':id/activate')
-  @RequirePermission('users:delete')
+  @RequirePermission(PERMISSIONS.USERS.DELETE)
   async activate(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,
@@ -92,7 +93,7 @@ export class UsersController {
   }
 
   @Post(':id/reset-password')
-  @RequirePermission('users:update')
+  @RequirePermission(PERMISSIONS.USERS.UPDATE)
   async resetPassword(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,
