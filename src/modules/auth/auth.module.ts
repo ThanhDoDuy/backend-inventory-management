@@ -1,0 +1,41 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
+import { MongooseModule } from '@nestjs/mongoose';
+import { SettingsModule } from '../settings/settings.module';
+import { TenantsModule } from '../tenants/tenants.module';
+import { UsersModule } from '../users/users.module';
+import {
+  RefreshToken,
+  RefreshTokenSchema,
+} from '../users/schemas/refresh-token.schema';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { JwtStrategy } from './strategies/jwt.strategy';
+
+@Module({
+  imports: [
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.get<string>('jwt.secret') ?? 'dev-secret',
+        signOptions: {
+          expiresIn: 900,
+        },
+      }),
+    }),
+    MongooseModule.forFeature([
+      { name: RefreshToken.name, schema: RefreshTokenSchema },
+    ]),
+    UsersModule,
+    TenantsModule,
+    SettingsModule,
+  ],
+  controllers: [AuthController],
+  providers: [AuthService, JwtStrategy],
+  exports: [AuthService, JwtModule],
+})
+export class AuthModule {}
