@@ -1,8 +1,17 @@
-import { Module } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
 import configuration from './config/configuration';
+import { envValidationSchema } from './config/env.validation';
+import { LoggerModule } from './infrastructure/logger/logger.module';
+import { RequestIdMiddleware } from './infrastructure/logger/request-id.middleware';
+import { LoggingInterceptor } from './infrastructure/logger/logging.interceptor';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { HealthModule } from './infrastructure/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -19,7 +28,13 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
+      validationSchema: envValidationSchema,
+      validationOptions: {
+        abortEarly: false,
+        allowUnknown: true,
+      },
     }),
+    LoggerModule,
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -37,8 +52,16 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RequestIdMiddleware).forRoutes({
+      path: '*path',
+      method: RequestMethod.ALL,
+    });
+  }
+}

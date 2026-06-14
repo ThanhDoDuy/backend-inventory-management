@@ -1,9 +1,12 @@
 import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
   app.setGlobalPrefix('api/v1');
   app.enableCors({
@@ -12,6 +15,7 @@ async function bootstrap() {
       'http://localhost:3000',
     ],
     credentials: true,
+    exposedHeaders: ['x-request-id'],
   });
 
   app.useGlobalPipes(
@@ -22,7 +26,7 @@ async function bootstrap() {
     }),
   );
 
-  const port = process.env.PORT ?? 3000;
+  const port = app.get(ConfigService).get<number>('port')!;
   await app.listen(port);
 }
 bootstrap();

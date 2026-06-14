@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { RedisService } from '../../infrastructure/redis/redis.service';
 import { DEFAULT_SETTINGS } from './constants/default-settings';
 import { Setting, SettingDocument } from './schemas/setting.schema';
@@ -12,9 +13,12 @@ export class SettingsService {
   constructor(
     @InjectModel(Setting.name) private settingModel: Model<SettingDocument>,
     private redisService: RedisService,
+    private readonly logger: AppLoggerService,
   ) {}
 
   async seedForTenant(tenantId: string): Promise<void> {
+    this.logger.step('SettingsService.seedForTenant', { tenantId });
+
     const docs = DEFAULT_SETTINGS.map((s) => ({
       tenant_id: new Types.ObjectId(tenantId),
       ...s,
@@ -27,6 +31,8 @@ export class SettingsService {
   }
 
   async get(tenantId: string, key: string): Promise<string | null> {
+    this.logger.step('SettingsService.get', { tenantId, key });
+
     const cacheKey = this.cacheKey(tenantId, key);
     const cached = await this.redisService.get(cacheKey);
     if (cached !== null) {
@@ -46,7 +52,11 @@ export class SettingsService {
     return setting.value;
   }
 
-  async getNumber(tenantId: string, key: string, fallback: number): Promise<number> {
+  async getNumber(
+    tenantId: string,
+    key: string,
+    fallback: number,
+  ): Promise<number> {
     const value = await this.get(tenantId, key);
     if (value === null) {
       return fallback;
@@ -55,7 +65,11 @@ export class SettingsService {
     return Number.isNaN(parsed) ? fallback : parsed;
   }
 
-  async getBoolean(tenantId: string, key: string, fallback: boolean): Promise<boolean> {
+  async getBoolean(
+    tenantId: string,
+    key: string,
+    fallback: boolean,
+  ): Promise<boolean> {
     const value = await this.get(tenantId, key);
     if (value === null) {
       return fallback;

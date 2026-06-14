@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
+import { AppLoggerService } from '../logger/app-logger.service';
 import { Public } from '../../shared/decorators/public.decorator';
 import { RedisService } from '../redis/redis.service';
 
@@ -9,6 +10,7 @@ export class HealthController {
   constructor(
     @InjectConnection() private connection: Connection,
     private redisService: RedisService,
+    private readonly logger: AppLoggerService,
   ) {}
 
   @Public()
@@ -30,10 +32,16 @@ export class HealthController {
     }
 
     const ready = mongoReady && redisReady;
-    return {
+    const result = {
       status: ready ? 'ready' : 'not_ready',
       mongo: mongoReady,
       redis: redisReady,
     };
+
+    if (!ready) {
+      this.logger.warn('HealthController.ready', result);
+    }
+
+    return result;
   }
 }

@@ -9,9 +9,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
+import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { RedisService } from '../../infrastructure/redis/redis.service';
 import { UserStatus } from '../../shared/constants/roles.enum';
 import { JwtPayload } from '../../shared/interfaces/jwt-payload.interface';
-import { RedisService } from '../../infrastructure/redis/redis.service';
 import { SettingsService } from '../settings/settings.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { UsersService } from '../users/users.service';
@@ -36,9 +37,16 @@ export class AuthService {
     private redisService: RedisService,
     @InjectModel(RefreshToken.name)
     private refreshTokenModel: Model<RefreshTokenDocument>,
+    private readonly logger: AppLoggerService,
   ) {}
 
   async register(dto: RegisterDto) {
+    this.logger.step('AuthService.register', {
+      email: dto.email,
+      tenantName: dto.tenantName,
+      username: dto.username,
+    });
+
     await this.tenantsService.assertCanCreateTenant();
 
     const existing = await this.usersService.findByEmail(dto.email);
@@ -74,8 +82,14 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    this.logger.step('AuthService.login', { email: dto.email });
+
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
+      this.logger.warn('AuthService.login', {
+        email: dto.email,
+        reason: 'user_not_found',
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
     if (user.status !== UserStatus.ACTIVE) {
@@ -84,6 +98,10 @@ export class AuthService {
 
     const valid = await bcrypt.compare(dto.password, user.password_hash);
     if (!valid) {
+      this.logger.warn('AuthService.login', {
+        email: dto.email,
+        reason: 'invalid_password',
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -96,6 +114,8 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string) {
+    this.logger.step('AuthService.refresh', {});
+
     const stored = await this.refreshTokenModel.findOne({
       token: refreshToken,
       is_deleted: false,
@@ -122,6 +142,8 @@ export class AuthService {
   }
 
   async logout(userId: string, tenantId: string, accessToken?: string) {
+    this.logger.step('AuthService.logout', { userId, tenantId });
+
     await this.refreshTokenModel.updateMany(
       { user_id: new Types.ObjectId(userId), is_deleted: false },
       { is_deleted: true },
@@ -142,6 +164,8 @@ export class AuthService {
   }
 
   async profile(userId: string) {
+    this.logger.step('AuthService.profile', { userId });
+
     const user = await this.usersService.findById(userId);
     if (!user) {
       throw new UnauthorizedException('User not found');
@@ -150,6 +174,8 @@ export class AuthService {
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
+    this.logger.step('AuthService.changePassword', { userId });
+
     if (dto.old_password === dto.new_password) {
       throw new ConflictException('New password must differ from old password');
     }

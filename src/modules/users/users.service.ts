@@ -7,6 +7,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
+import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { Role, UserStatus } from '../../shared/constants/roles.enum';
 import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
@@ -16,6 +17,7 @@ export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private configService: ConfigService,
+    private readonly logger: AppLoggerService,
   ) {}
 
   async countActiveInTenant(tenantId: string): Promise<number> {
@@ -27,6 +29,8 @@ export class UsersService {
   }
 
   async assertCanCreateUser(tenantId: string): Promise<void> {
+    this.logger.step('UsersService.assertCanCreateUser', { tenantId });
+
     const max = this.configService.get<number>('maxUsersPerTenant') ?? 20;
     const count = await this.countActiveInTenant(tenantId);
     if (count >= max) {
@@ -66,6 +70,13 @@ export class UsersService {
     tenantId: string,
     dto: CreateUserDto,
   ): Promise<UserDocument> {
+    this.logger.step('UsersService.create', {
+      tenantId,
+      username: dto.username,
+      email: dto.email,
+      role: dto.role,
+    });
+
     await this.assertCanCreateUser(tenantId);
 
     const existingEmail = await this.findByEmail(dto.email);
@@ -90,6 +101,8 @@ export class UsersService {
     email: string,
     password: string,
   ): Promise<UserDocument> {
+    this.logger.step('UsersService.createOwner', { tenantId, username, email });
+
     const passwordHash = await bcrypt.hash(password, 10);
     return this.userModel.create({
       tenant_id: new Types.ObjectId(tenantId),
@@ -116,6 +129,15 @@ export class UsersService {
     role?: Role,
     status?: UserStatus,
   ) {
+    this.logger.step('UsersService.list', {
+      tenantId,
+      page,
+      limit,
+      search,
+      role,
+      status,
+    });
+
     const filter: Record<string, unknown> = {
       tenant_id: new Types.ObjectId(tenantId),
       is_deleted: false,
@@ -148,6 +170,8 @@ export class UsersService {
     id: string,
     dto: UpdateUserDto,
   ): Promise<UserDocument> {
+    this.logger.step('UsersService.update', { tenantId, id, ...dto });
+
     const user = await this.findByIdInTenant(tenantId, id);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -159,6 +183,8 @@ export class UsersService {
   }
 
   async disable(tenantId: string, id: string): Promise<UserDocument> {
+    this.logger.step('UsersService.disable', { tenantId, id });
+
     const user = await this.findByIdInTenant(tenantId, id);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -173,6 +199,8 @@ export class UsersService {
     id: string,
     newPassword: string,
   ): Promise<void> {
+    this.logger.step('UsersService.resetPassword', { tenantId, id });
+
     const user = await this.findByIdInTenant(tenantId, id);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -186,6 +214,8 @@ export class UsersService {
     oldPassword: string,
     newPassword: string,
   ): Promise<void> {
+    this.logger.step('UsersService.changePassword', { userId });
+
     const user = await this.findById(userId);
     if (!user) {
       throw new NotFoundException('User not found');

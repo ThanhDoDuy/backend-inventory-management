@@ -2,6 +2,7 @@ import { Injectable, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
+import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { Tenant, TenantDocument } from './schemas/tenant.schema';
 import { TenantStatus } from '../../shared/constants/roles.enum';
 
@@ -10,6 +11,7 @@ export class TenantsService {
   constructor(
     @InjectModel(Tenant.name) private tenantModel: Model<TenantDocument>,
     private configService: ConfigService,
+    private readonly logger: AppLoggerService,
   ) {}
 
   async countActive(): Promise<number> {
@@ -17,6 +19,8 @@ export class TenantsService {
   }
 
   async assertCanCreateTenant(): Promise<void> {
+    this.logger.step('TenantsService.assertCanCreateTenant', {});
+
     const max = this.configService.get<number>('maxTenants') ?? 20;
     const count = await this.countActive();
     if (count >= max) {
@@ -28,6 +32,8 @@ export class TenantsService {
   }
 
   async create(name: string, slug: string): Promise<TenantDocument> {
+    this.logger.step('TenantsService.create', { name, slug });
+
     return this.tenantModel.create({
       name,
       slug,
@@ -36,6 +42,8 @@ export class TenantsService {
   }
 
   async findById(id: string): Promise<TenantDocument | null> {
+    this.logger.step('TenantsService.findById', { id });
+
     return this.tenantModel.findById(id);
   }
 
