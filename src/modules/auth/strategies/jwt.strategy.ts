@@ -30,6 +30,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new AppError(ERRORS.AUTH.TENANT_CONTEXT_MISSING);
     }
 
+    if (!payload.role_id) {
+      throw new AppError(ERRORS.AUTH.INVALID_TOKEN);
+    }
+
     const user = await this.userModel.findById(payload.sub);
     if (!user || user.is_deleted || user.status !== UserStatus.ACTIVE) {
       throw new AppError(ERRORS.AUTH.USER_NOT_FOUND_OR_DISABLED);
@@ -37,6 +41,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (user.tenant_id.toString() !== payload.tenant_id) {
       throw new AppError(ERRORS.AUTH.TENANT_MISMATCH);
+    }
+
+    if (user.role_id.toString() !== payload.role_id) {
+      throw new AppError(ERRORS.AUTH.INVALID_TOKEN);
     }
 
     this.requestContext.setUser(
@@ -48,7 +56,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       userId: user._id.toString(),
       tenantId: user.tenant_id.toString(),
       email: user.email,
-      role: user.role,
+      roleId: user.role_id.toString(),
       username: user.username,
     };
   }

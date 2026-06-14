@@ -1,7 +1,17 @@
-import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
+import { CurrentUser } from '../../shared/decorators/current-user.decorator';
 import { RequirePermission } from '../../shared/decorators/require-permission.decorator';
 import { PERMISSIONS } from '../../shared/constants/permission.constants';
-import { UpdateRolePermissionsDto } from './dto/update-role-permissions.dto';
+import type { RequestUser } from '../../shared/interfaces/request-user.interface';
+import { CreateRoleDto, UpdateRoleDto } from './dto/role.dto';
 import { RbacService } from './rbac.service';
 
 @Controller('rbac')
@@ -16,22 +26,35 @@ export class RbacController {
 
   @Get('roles')
   @RequirePermission(PERMISSIONS.RBAC.VIEW)
-  listRoles() {
-    return this.rbacService.listRoles();
+  listRoles(@CurrentUser() user: RequestUser) {
+    return this.rbacService.listRoles(user.tenantId);
   }
 
-  @Get('roles/:code')
+  @Get('roles/:id')
   @RequirePermission(PERMISSIONS.RBAC.VIEW)
-  getRole(@Param('code') code: string) {
-    return this.rbacService.getRoleByCode(code);
+  getRole(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.rbacService.getRoleById(user.tenantId, id);
   }
 
-  @Patch('roles/:code/permissions')
+  @Post('roles')
   @RequirePermission(PERMISSIONS.RBAC.UPDATE)
-  updateRolePermissions(
-    @Param('code') code: string,
-    @Body() dto: UpdateRolePermissionsDto,
+  createRole(@CurrentUser() user: RequestUser, @Body() dto: CreateRoleDto) {
+    return this.rbacService.createRole(user.tenantId, dto);
+  }
+
+  @Patch('roles/:id')
+  @RequirePermission(PERMISSIONS.RBAC.UPDATE)
+  updateRole(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateRoleDto,
   ) {
-    return this.rbacService.updateRolePermissions(code, dto);
+    return this.rbacService.updateRole(user.tenantId, id, dto);
+  }
+
+  @Delete('roles/:id')
+  @RequirePermission(PERMISSIONS.RBAC.UPDATE)
+  deleteRole(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.rbacService.deleteRole(user.tenantId, id);
   }
 }

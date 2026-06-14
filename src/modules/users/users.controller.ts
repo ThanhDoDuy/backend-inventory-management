@@ -10,10 +10,11 @@ import {
 import { CurrentUser } from '../../shared/decorators/current-user.decorator';
 import { RequirePermission } from '../../shared/decorators/require-permission.decorator';
 import { PERMISSIONS } from '../../shared/constants/permission.constants';
-import { Role, UserStatus } from '../../shared/constants/roles.enum';
+import { UserStatus } from '../../shared/constants/roles.enum';
 import type { RequestUser } from '../../shared/interfaces/request-user.interface';
 import {
   ActivateUserDto,
+  AssignRoleDto,
   CreateUserDto,
   DisableUserDto,
   ResetPasswordDto,
@@ -32,7 +33,7 @@ export class UsersController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
-    @Query('role') role?: Role,
+    @Query('role_id') roleId?: string,
     @Query('status') status?: UserStatus,
   ) {
     return this.usersService.list(
@@ -40,7 +41,7 @@ export class UsersController {
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
       search,
-      role,
+      roleId,
       status,
     );
   }
@@ -67,6 +68,21 @@ export class UsersController {
     @Body() dto: UpdateUserDto,
   ) {
     const updated = await this.usersService.update(user.tenantId, id, dto);
+    return this.usersService.toProfile(updated);
+  }
+
+  @Patch(':id/assign-role')
+  @RequirePermission(PERMISSIONS.USERS.UPDATE)
+  async assignRole(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() dto: AssignRoleDto,
+  ) {
+    const updated = await this.usersService.assignRole(
+      user.tenantId,
+      id,
+      dto.role_id,
+    );
     return this.usersService.toProfile(updated);
   }
 

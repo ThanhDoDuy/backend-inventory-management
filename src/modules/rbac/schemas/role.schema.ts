@@ -1,11 +1,14 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 
 export type RoleDocument = HydratedDocument<Role>;
 
 @Schema({ timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } })
 export class Role {
-  @Prop({ required: true, unique: true, index: true })
+  @Prop({ type: Types.ObjectId, required: true, index: true })
+  tenant_id: Types.ObjectId;
+
+  @Prop({ required: true })
   code: string;
 
   @Prop({ required: true })
@@ -20,7 +23,7 @@ export class Role {
   @Prop({ default: false })
   is_wildcard: boolean;
 
-  @Prop({ default: true })
+  @Prop({ default: false })
   is_system: boolean;
 
   @Prop({ default: true })
@@ -28,3 +31,4 @@ export class Role {
 }
 
 export const RoleSchema = SchemaFactory.createForClass(Role);
+RoleSchema.index({ tenant_id: 1, code: 1 }, { unique: true });

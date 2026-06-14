@@ -11,6 +11,7 @@ import { RedisService } from '../../infrastructure/redis/redis.service';
 import { UserStatus } from '../../shared/constants/roles.enum';
 import { JwtPayload } from '../../shared/interfaces/jwt-payload.interface';
 import { SettingsService } from '../settings/settings.service';
+import { RbacService } from '../rbac/rbac.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { UsersService } from '../users/users.service';
 import {
@@ -29,6 +30,7 @@ export class AuthService {
     private usersService: UsersService,
     private tenantsService: TenantsService,
     private settingsService: SettingsService,
+    private rbacService: RbacService,
     private jwtService: JwtService,
     private configService: ConfigService,
     private redisService: RedisService,
@@ -54,6 +56,9 @@ export class AuthService {
     const slug = this.tenantsService.slugify(dto.tenantName);
     const tenant = await this.tenantsService.create(dto.tenantName, slug);
 
+    await this.rbacService.seedRolesForTenant(tenant._id.toString());
+    await this.settingsService.seedForTenant(tenant._id.toString());
+
     const owner = await this.usersService.createOwner(
       tenant._id.toString(),
       dto.username,
@@ -63,8 +68,6 @@ export class AuthService {
 
     tenant.owner_user_id = owner._id;
     await tenant.save();
-
-    await this.settingsService.seedForTenant(tenant._id.toString());
 
     const tokens = await this.issueTokens(owner);
     return {
@@ -131,7 +134,7 @@ export class AuthService {
       sub: user._id.toString(),
       tenant_id: user.tenant_id.toString(),
       email: user.email,
-      role: user.role,
+      role_id: user.role_id.toString(),
     };
 
     const access_token = await this.jwtService.signAsync(payload);
@@ -188,13 +191,13 @@ export class AuthService {
     _id: Types.ObjectId;
     tenant_id: Types.ObjectId;
     email: string;
-    role: JwtPayload['role'];
+    role_id: Types.ObjectId;
   }) {
     const payload: JwtPayload = {
       sub: user._id.toString(),
       tenant_id: user.tenant_id.toString(),
       email: user.email,
-      role: user.role,
+      role_id: user.role_id.toString(),
     };
 
     const access_token = await this.jwtService.signAsync(payload);

@@ -102,6 +102,17 @@ export const ERRORS = {
       message: 'User is already active',
       httpStatus: HttpStatus.CONFLICT,
     },
+    SAME_ROLE: {
+      errorCode: 3006,
+      message: 'User already has this role',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    LAST_ADMIN_ROLE_CHANGE: {
+      errorCode: 3007,
+      message:
+        'Cannot change role: this is the only admin in the tenant. Assign another admin first.',
+      httpStatus: HttpStatus.CONFLICT,
+    },
   },
   TENANT: {
     LIMIT_REACHED: {
@@ -125,6 +136,21 @@ export const ERRORS = {
       errorCode: 5002,
       message: 'System role cannot be modified',
       httpStatus: HttpStatus.CONFLICT,
+    },
+    ROLE_CODE_EXISTS: {
+      errorCode: 5003,
+      message: 'Role code already exists in this tenant',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    ROLE_IN_USE: {
+      errorCode: 5004,
+      message: 'Role is assigned to users and cannot be deleted',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    ROLE_CODE_RESERVED: {
+      errorCode: 5005,
+      message: 'Role code is reserved for system roles',
+      httpStatus: HttpStatus.BAD_REQUEST,
     },
   },
 } as const satisfies Record<string, Record<string, ErrorDefinition>>;

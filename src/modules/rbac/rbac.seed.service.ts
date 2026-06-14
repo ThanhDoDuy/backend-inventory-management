@@ -1,11 +1,21 @@
 import { Injectable, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
-import { SEED_PERMISSIONS, SEED_ROLES } from './constants/rbac-seed.data';
+import { Role as RoleCode } from '../../shared/constants/roles.enum';
+import { Tenant, TenantDocument } from '../tenants/schemas/tenant.schema';
+import { User, UserDocument } from '../users/schemas/user.schema';
+import { SEED_PERMISSIONS } from './constants/rbac-seed.data';
 import { Permission, PermissionDocument } from './schemas/permission.schema';
 import { Role, RoleDocument } from './schemas/role.schema';
 import { RbacService } from './rbac.service';
+
+interface LegacyUser {
+  _id: Types.ObjectId;
+  tenant_id: Types.ObjectId;
+  role?: RoleCode;
+  role_id?: Types.ObjectId;
+}
 
 @Injectable()
 export class RbacSeedService implements OnApplicationBootstrap {
@@ -13,6 +23,8 @@ export class RbacSeedService implements OnApplicationBootstrap {
     @InjectModel(Permission.name)
     private permissionModel: Model<PermissionDocument>,
     @InjectModel(Role.name) private roleModel: Model<RoleDocument>,
+    @InjectModel(Tenant.name) private tenantModel: Model<TenantDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly rbacService: RbacService,
     private readonly logger: AppLoggerService,
   ) {}
@@ -24,6 +36,18 @@ export class RbacSeedService implements OnApplicationBootstrap {
   async seed(): Promise<void> {
     this.logger.step('RbacSeedService.seed', {});
 
+    await this.seedPermissions();
+    await this.roleModel.deleteMany({ tenant_id: { $exists: false } });
+    await this.ensureTenantRoles();
+    await this.migrateLegacyUsers();
+    await this.rbacService.refreshCache();
+
+    this.logger.step('RbacSeedService.seed.completed', {
+      permissions: SEED_PERMISSIONS.length,
+    });
+  }
+
+  private async seedPermissions(): Promise<void> {
     for (const permission of SEED_PERMISSIONS) {
       await this.permissionModel.updateOne(
         { code: permission.code },
@@ -31,41 +55,49 @@ export class RbacSeedService implements OnApplicationBootstrap {
         { upsert: true },
       );
     }
+  }
 
-    const activePermissionCodes = new Set(
-      (
-        await this.permissionModel.find({ is_active: true }).select('code').lean()
-      ).map((p) => p.code),
-    );
-    activePermissionCodes.add('*');
+  private async ensureTenantRoles(): Promise<void> {
+    const tenants = await this.tenantModel.find().select('_id').lean();
+    for (const tenant of tenants) {
+      await this.rbacService.seedRolesForTenant(tenant._id.toString());
+    }
+  }
 
-    for (const role of SEED_ROLES) {
-      const permissionCodes = role.permission_codes.filter((code) =>
-        activePermissionCodes.has(code),
-      );
+  private async migrateLegacyUsers(): Promise<void> {
+    const users = await this.userModel
+      .find({
+        is_deleted: false,
+        $or: [{ role_id: { $exists: false } }, { role_id: null }],
+      })
+      .select('_id tenant_id role role_id')
+      .lean<LegacyUser[]>();
 
-      await this.roleModel.updateOne(
-        { code: role.code },
+    for (const user of users) {
+      if (!user.role) {
+        continue;
+      }
+
+      const role = await this.roleModel
+        .findOne({
+          tenant_id: user.tenant_id,
+          code: user.role,
+          is_active: true,
+        })
+        .select('_id')
+        .lean();
+
+      if (!role) {
+        continue;
+      }
+
+      await this.userModel.updateOne(
+        { _id: user._id },
         {
-          $set: {
-            name: role.name,
-            description: role.description,
-            is_system: true,
-            is_active: true,
-          },
-          $setOnInsert: {
-            is_wildcard: role.is_wildcard,
-            permission_codes: permissionCodes,
-          },
+          $set: { role_id: role._id },
+          $unset: { role: 1 },
         },
-        { upsert: true },
       );
     }
-
-    await this.rbacService.refreshCache();
-    this.logger.step('RbacSeedService.seed.completed', {
-      permissions: SEED_PERMISSIONS.length,
-      roles: SEED_ROLES.length,
-    });
   }
 }

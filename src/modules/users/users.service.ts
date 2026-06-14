@@ -5,7 +5,9 @@ import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { AppError, ERRORS } from '../../shared/errors';
-import { Role, UserStatus } from '../../shared/constants/roles.enum';
+import { Role as RoleCode } from '../../shared/constants/roles.enum';
+import { UserStatus } from '../../shared/constants/roles.enum';
+import { RbacService } from '../rbac/rbac.service';
 import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 
@@ -14,6 +16,7 @@ export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private configService: ConfigService,
+    private readonly rbacService: RbacService,
     private readonly logger: AppLoggerService,
   ) {}
 
@@ -55,11 +58,13 @@ export class UsersService {
     tenantId: string,
     id: string,
   ): Promise<UserDocument | null> {
-    return this.userModel.findOne({
-      _id: id,
-      tenant_id: new Types.ObjectId(tenantId),
-      is_deleted: false,
-    });
+    return this.userModel
+      .findOne({
+        _id: id,
+        tenant_id: new Types.ObjectId(tenantId),
+        is_deleted: false,
+      })
+      .populate('role_id', 'code name');
   }
 
   async create(
@@ -70,10 +75,11 @@ export class UsersService {
       tenantId,
       username: dto.username,
       email: dto.email,
-      role: dto.role,
+      role_id: dto.role_id,
     });
 
     await this.assertCanCreateUser(tenantId);
+    await this.rbacService.assertRoleInTenant(tenantId, dto.role_id);
 
     const existingEmail = await this.findByEmail(dto.email);
     if (existingEmail) {
@@ -86,7 +92,7 @@ export class UsersService {
       username: dto.username,
       email: dto.email.toLowerCase(),
       password_hash: passwordHash,
-      role: dto.role,
+      role_id: new Types.ObjectId(dto.role_id),
       status: UserStatus.ACTIVE,
     });
   }
@@ -99,13 +105,18 @@ export class UsersService {
   ): Promise<UserDocument> {
     this.logger.step('UsersService.createOwner', { tenantId, username, email });
 
+    const adminRole = await this.rbacService.getRoleByCodeInTenant(
+      tenantId,
+      RoleCode.ADMIN,
+    );
+
     const passwordHash = await bcrypt.hash(password, 10);
     return this.userModel.create({
       tenant_id: new Types.ObjectId(tenantId),
       username,
       email: email.toLowerCase(),
       password_hash: passwordHash,
-      role: Role.ADMIN,
+      role_id: adminRole._id,
       status: UserStatus.ACTIVE,
     });
   }
@@ -122,7 +133,7 @@ export class UsersService {
     page = 1,
     limit = 20,
     search?: string,
-    role?: Role,
+    roleId?: string,
     status?: UserStatus,
   ) {
     this.logger.step('UsersService.list', {
@@ -130,7 +141,7 @@ export class UsersService {
       page,
       limit,
       search,
-      role,
+      roleId,
       status,
     });
 
@@ -138,7 +149,7 @@ export class UsersService {
       tenant_id: new Types.ObjectId(tenantId),
       is_deleted: false,
     };
-    if (role) filter.role = role;
+    if (roleId) filter.role_id = new Types.ObjectId(roleId);
     if (status) filter.status = status;
     if (search) {
       filter.$or = [
@@ -152,13 +163,19 @@ export class UsersService {
       this.userModel
         .find(filter)
         .select('-password_hash')
+        .populate('role_id', 'code name')
         .skip(skip)
         .limit(limit)
         .sort({ created_at: -1 }),
       this.userModel.countDocuments(filter),
     ]);
 
-    return { items, total, page, limit };
+    return {
+      items: items.map((user) => this.toProfile(user)),
+      total,
+      page,
+      limit,
+    };
   }
 
   async update(
@@ -173,9 +190,49 @@ export class UsersService {
       throw new AppError(ERRORS.USER.NOT_FOUND);
     }
     if (dto.username) user.username = dto.username;
-    if (dto.role) user.role = dto.role;
+    if (dto.role_id) {
+      await this.rbacService.assertRoleInTenant(tenantId, dto.role_id);
+      await this.assertCanDemoteLastAdmin(tenantId, user.role_id, dto.role_id);
+      user.role_id = new Types.ObjectId(dto.role_id);
+    }
     await user.save();
     return user;
+  }
+
+  async assignRole(
+    tenantId: string,
+    id: string,
+    roleId: string,
+  ): Promise<UserDocument> {
+    this.logger.step('UsersService.assignRole', { tenantId, id, roleId });
+
+    const user = await this.userModel.findOne({
+      _id: id,
+      tenant_id: new Types.ObjectId(tenantId),
+      is_deleted: false,
+    });
+
+    if (!user) {
+      throw new AppError(ERRORS.USER.NOT_FOUND);
+    }
+
+    await this.rbacService.assertRoleInTenant(tenantId, roleId);
+
+    if (user.role_id.toString() === roleId) {
+      throw new AppError(ERRORS.USER.SAME_ROLE);
+    }
+
+    await this.assertCanDemoteLastAdmin(tenantId, user.role_id, roleId);
+
+    user.role_id = new Types.ObjectId(roleId);
+    await user.save();
+
+    const updated = await this.findByIdInTenant(tenantId, id);
+    if (!updated) {
+      throw new AppError(ERRORS.USER.NOT_FOUND);
+    }
+
+    return updated;
   }
 
   async disable(tenantId: string, id: string): Promise<UserDocument> {
@@ -242,13 +299,54 @@ export class UsersService {
     await user.save();
   }
 
+  private async assertCanDemoteLastAdmin(
+    tenantId: string,
+    currentRoleId: Types.ObjectId,
+    newRoleId: string,
+  ): Promise<void> {
+    const adminRole = await this.rbacService.getRoleByCodeInTenant(
+      tenantId,
+      RoleCode.ADMIN,
+    );
+    const adminRoleId = adminRole._id.toString();
+
+    if (currentRoleId.toString() !== adminRoleId) {
+      return;
+    }
+
+    if (newRoleId === adminRoleId) {
+      return;
+    }
+
+    const adminCount = await this.userModel.countDocuments({
+      tenant_id: new Types.ObjectId(tenantId),
+      role_id: adminRole._id,
+      is_deleted: false,
+    });
+
+    if (adminCount <= 1) {
+      throw new AppError(ERRORS.USER.LAST_ADMIN_ROLE_CHANGE);
+    }
+  }
+
   toProfile(user: UserDocument) {
+    const populatedRole = user.populated('role_id')
+      ? (user.role_id as unknown as { _id: Types.ObjectId; code: string; name: string })
+      : null;
+
     return {
       id: user._id,
       tenant_id: user.tenant_id,
       username: user.username,
       email: user.email,
-      role: user.role,
+      role_id: populatedRole?._id ?? user.role_id,
+      role: populatedRole
+        ? {
+            id: populatedRole._id,
+            code: populatedRole.code,
+            name: populatedRole.name,
+          }
+        : undefined,
       status: user.status,
       last_login_at: user.last_login_at,
     };

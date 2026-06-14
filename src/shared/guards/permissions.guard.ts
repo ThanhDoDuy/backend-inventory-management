@@ -32,10 +32,10 @@ export class PermissionsGuard implements CanActivate {
     if (!user?.tenantId) {
       throw new AppError(ERRORS.AUTH.TENANT_CONTEXT_REQUIRED);
     }
-    if (!this.rbacService.hasPermission(user.role, required)) {
+    if (!this.rbacService.hasPermission(user.roleId, required)) {
       this.logger.warn('PermissionsGuard.canActivate', {
         userId: user.userId,
-        role: user.role,
+        roleId: user.roleId,
         permission: required,
       });
       throw new AppError(ERRORS.AUTH.PERMISSION_DENIED, {
