@@ -1,11 +1,10 @@
 import {
   IsEmail,
-  IsEnum,
+  IsMongoId,
   IsOptional,
   IsString,
   MinLength,
 } from 'class-validator';
-import { Role } from '../../../shared/constants/roles.enum';
 
 export class CreateUserDto {
   @IsString()
@@ -18,8 +17,8 @@ export class CreateUserDto {
   @MinLength(8)
   password: string;
 
-  @IsEnum(Role)
-  role: Role;
+  @IsMongoId()
+  role_id: string;
 }
 
 export class UpdateUserDto {
@@ -28,13 +27,24 @@ export class UpdateUserDto {
   username?: string;
 
   @IsOptional()
-  @IsEnum(Role)
-  role?: Role;
+  @IsMongoId()
+  role_id?: string;
 }
 
 export class DisableUserDto {
   @IsString()
   reason: string;
+}
+
+export class ActivateUserDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+export class AssignRoleDto {
+  @IsMongoId()
+  role_id: string;
 }
 
 export class ResetPasswordDto {

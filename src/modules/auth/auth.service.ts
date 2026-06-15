@@ -1,18 +1,20 @@
-import {
-  ConflictException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
+import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { AppError, ERRORS } from '../../shared/errors';
+import { RedisService } from '../../infrastructure/redis/redis.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS, AUDIT_MODULES } from '../audit/constants/audit.constants';
 import { UserStatus } from '../../shared/constants/roles.enum';
 import { JwtPayload } from '../../shared/interfaces/jwt-payload.interface';
-import { RedisService } from '../../infrastructure/redis/redis.service';
+import { toObjectIdString } from '../../shared/utils/mongo-id.util';
 import { SettingsService } from '../settings/settings.service';
+import { RbacService } from '../rbac/rbac.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { UsersService } from '../users/users.service';
 import {
@@ -31,23 +33,35 @@ export class AuthService {
     private usersService: UsersService,
     private tenantsService: TenantsService,
     private settingsService: SettingsService,
+    private rbacService: RbacService,
     private jwtService: JwtService,
     private configService: ConfigService,
     private redisService: RedisService,
+    private auditService: AuditService,
     @InjectModel(RefreshToken.name)
     private refreshTokenModel: Model<RefreshTokenDocument>,
+    private readonly logger: AppLoggerService,
   ) {}
 
   async register(dto: RegisterDto) {
+    this.logger.step('AuthService.register', {
+      email: dto.email,
+      tenantName: dto.tenantName,
+      username: dto.username,
+    });
+
     await this.tenantsService.assertCanCreateTenant();
 
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
-      throw new ConflictException('Email already in use');
+      throw new AppError(ERRORS.USER.EMAIL_IN_USE);
     }
 
     const slug = this.tenantsService.slugify(dto.tenantName);
     const tenant = await this.tenantsService.create(dto.tenantName, slug);
+
+    await this.rbacService.seedRolesForTenant(tenant._id.toString());
+    await this.settingsService.seedForTenant(tenant._id.toString());
 
     const owner = await this.usersService.createOwner(
       tenant._id.toString(),
@@ -59,9 +73,14 @@ export class AuthService {
     tenant.owner_user_id = owner._id;
     await tenant.save();
 
-    await this.settingsService.seedForTenant(tenant._id.toString());
-
     const tokens = await this.issueTokens(owner);
+    this.auditService.emit({
+      tenantId: tenant._id.toString(),
+      userId: owner._id.toString(),
+      action: AUDIT_ACTIONS.LOGIN,
+      module: AUDIT_MODULES.AUTH,
+      metadata: { event: 'REGISTER_TENANT' },
+    });
     return {
       ...tokens,
       user: this.usersService.toProfile(owner),
@@ -74,21 +93,51 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
+    this.logger.step('AuthService.login', { email: dto.email });
+
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      this.logger.warn('AuthService.login', {
+        email: dto.email,
+        reason: 'user_not_found',
+      });
+      this.auditService.emit({
+        action: AUDIT_ACTIONS.LOGIN_FAILED,
+        module: AUDIT_MODULES.SECURITY,
+        status: 'FAILED',
+        metadata: { email: dto.email, reason: 'user_not_found' },
+      });
+      throw new AppError(ERRORS.AUTH.INVALID_CREDENTIALS);
     }
     if (user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException('User account is disabled');
+      throw new AppError(ERRORS.AUTH.USER_DISABLED);
     }
 
     const valid = await bcrypt.compare(dto.password, user.password_hash);
     if (!valid) {
-      throw new UnauthorizedException('Invalid credentials');
+      this.logger.warn('AuthService.login', {
+        email: dto.email,
+        reason: 'invalid_password',
+      });
+      this.auditService.emit({
+        tenantId: user.tenant_id.toString(),
+        userId: user._id.toString(),
+        action: AUDIT_ACTIONS.LOGIN_FAILED,
+        module: AUDIT_MODULES.SECURITY,
+        status: 'FAILED',
+        metadata: { email: dto.email, reason: 'invalid_password' },
+      });
+      throw new AppError(ERRORS.AUTH.INVALID_CREDENTIALS);
     }
 
     await this.usersService.updateLastLogin(user._id.toString());
     const tokens = await this.issueTokens(user);
+    this.auditService.emit({
+      tenantId: user.tenant_id.toString(),
+      userId: user._id.toString(),
+      action: AUDIT_ACTIONS.LOGIN,
+      module: AUDIT_MODULES.AUTH,
+    });
     return {
       ...tokens,
       user: this.usersService.toProfile(user),
@@ -96,25 +145,27 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string) {
+    this.logger.step('AuthService.refresh', {});
+
     const stored = await this.refreshTokenModel.findOne({
       token: refreshToken,
       is_deleted: false,
       expired_at: { $gt: new Date() },
     });
     if (!stored) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new AppError(ERRORS.AUTH.INVALID_REFRESH_TOKEN);
     }
 
     const user = await this.usersService.findById(stored.user_id.toString());
     if (!user || user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException('User not found or disabled');
+      throw new AppError(ERRORS.AUTH.USER_NOT_FOUND_OR_DISABLED);
     }
 
     const payload: JwtPayload = {
       sub: user._id.toString(),
       tenant_id: user.tenant_id.toString(),
       email: user.email,
-      role: user.role,
+      role_id: toObjectIdString(user.role_id),
     };
 
     const access_token = await this.jwtService.signAsync(payload);
@@ -122,6 +173,8 @@ export class AuthService {
   }
 
   async logout(userId: string, tenantId: string, accessToken?: string) {
+    this.logger.step('AuthService.logout', { userId, tenantId });
+
     await this.refreshTokenModel.updateMany(
       { user_id: new Types.ObjectId(userId), is_deleted: false },
       { is_deleted: true },
@@ -138,26 +191,46 @@ export class AuthService {
       this.redisService.tenantKey(tenantId, 'refresh_token', userId),
     );
 
+    this.auditService.emit({
+      tenantId,
+      userId,
+      action: AUDIT_ACTIONS.LOGOUT,
+      module: AUDIT_MODULES.AUTH,
+    });
+
     return { message: 'Logout successfully' };
   }
 
   async profile(userId: string) {
+    this.logger.step('AuthService.profile', { userId });
+
     const user = await this.usersService.findById(userId);
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new AppError(ERRORS.AUTH.USER_NOT_FOUND);
     }
     return this.usersService.toProfile(user);
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
+    this.logger.step('AuthService.changePassword', { userId });
+
     if (dto.old_password === dto.new_password) {
-      throw new ConflictException('New password must differ from old password');
+      throw new AppError(ERRORS.AUTH.PASSWORD_UNCHANGED);
     }
     await this.usersService.changePassword(
       userId,
       dto.old_password,
       dto.new_password,
     );
+
+    const user = await this.usersService.findById(userId);
+    this.auditService.emit({
+      tenantId: user?.tenant_id.toString(),
+      userId,
+      action: AUDIT_ACTIONS.PASSWORD_CHANGED,
+      module: AUDIT_MODULES.AUTH,
+    });
+
     return { message: 'Password changed successfully' };
   }
 
@@ -165,13 +238,13 @@ export class AuthService {
     _id: Types.ObjectId;
     tenant_id: Types.ObjectId;
     email: string;
-    role: JwtPayload['role'];
+    role_id: Types.ObjectId | { _id: Types.ObjectId };
   }) {
     const payload: JwtPayload = {
       sub: user._id.toString(),
       tenant_id: user.tenant_id.toString(),
       email: user.email,
-      role: user.role,
+      role_id: toObjectIdString(user.role_id),
     };
 
     const access_token = await this.jwtService.signAsync(payload);

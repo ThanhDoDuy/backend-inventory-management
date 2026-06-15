@@ -9,9 +9,12 @@ import {
 } from '@nestjs/common';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator';
 import { RequirePermission } from '../../shared/decorators/require-permission.decorator';
-import { Role, UserStatus } from '../../shared/constants/roles.enum';
+import { PERMISSIONS } from '../../shared/constants/permission.constants';
+import { UserStatus } from '../../shared/constants/roles.enum';
 import type { RequestUser } from '../../shared/interfaces/request-user.interface';
 import {
+  ActivateUserDto,
+  AssignRoleDto,
   CreateUserDto,
   DisableUserDto,
   ResetPasswordDto,
@@ -24,13 +27,13 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Get()
-  @RequirePermission('users:view')
+  @RequirePermission(PERMISSIONS.USERS.VIEW)
   list(
     @CurrentUser() user: RequestUser,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
-    @Query('role') role?: Role,
+    @Query('role_id') roleId?: string,
     @Query('status') status?: UserStatus,
   ) {
     return this.usersService.list(
@@ -38,27 +41,27 @@ export class UsersController {
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
       search,
-      role,
+      roleId,
       status,
     );
   }
 
   @Get(':id')
-  @RequirePermission('users:view')
+  @RequirePermission(PERMISSIONS.USERS.VIEW)
   async getOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     const found = await this.usersService.findByIdInTenant(user.tenantId, id);
     return found ? this.usersService.toProfile(found) : null;
   }
 
   @Post()
-  @RequirePermission('users:create')
+  @RequirePermission(PERMISSIONS.USERS.CREATE)
   async create(@CurrentUser() user: RequestUser, @Body() dto: CreateUserDto) {
     const created = await this.usersService.create(user.tenantId, dto);
     return this.usersService.toProfile(created);
   }
 
   @Patch(':id')
-  @RequirePermission('users:update')
+  @RequirePermission(PERMISSIONS.USERS.UPDATE)
   async update(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,
@@ -68,8 +71,23 @@ export class UsersController {
     return this.usersService.toProfile(updated);
   }
 
+  @Patch(':id/assign-role')
+  @RequirePermission(PERMISSIONS.USERS.UPDATE)
+  async assignRole(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() dto: AssignRoleDto,
+  ) {
+    const updated = await this.usersService.assignRole(
+      user.tenantId,
+      id,
+      dto.role_id,
+    );
+    return this.usersService.toProfile(updated);
+  }
+
   @Patch(':id/disable')
-  @RequirePermission('users:delete')
+  @RequirePermission(PERMISSIONS.USERS.DELETE)
   async disable(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,
@@ -79,8 +97,19 @@ export class UsersController {
     return this.usersService.toProfile(updated);
   }
 
+  @Patch(':id/activate')
+  @RequirePermission(PERMISSIONS.USERS.DELETE)
+  async activate(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() _dto: ActivateUserDto,
+  ) {
+    const updated = await this.usersService.activate(user.tenantId, id);
+    return this.usersService.toProfile(updated);
+  }
+
   @Post(':id/reset-password')
-  @RequirePermission('users:update')
+  @RequirePermission(PERMISSIONS.USERS.UPDATE)
   async resetPassword(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,

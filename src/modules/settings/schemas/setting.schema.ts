@@ -28,6 +28,9 @@ export class Setting {
 
   @Prop({ default: 1 })
   version: number;
+
+  @Prop({ type: Types.ObjectId, default: null })
+  modified_by?: Types.ObjectId;
 }
 
 export const SettingSchema = SchemaFactory.createForClass(Setting);
