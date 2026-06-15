@@ -1,6 +1,10 @@
 import Joi from 'joi';
+import { validateCorsOriginsString } from './cors.util';
 
 export const envValidationSchema = Joi.object({
+  NODE_ENV: Joi.string()
+    .valid('development', 'production', 'test')
+    .default('development'),
   PORT: Joi.number().port().required(),
   MAX_TENANTS: Joi.number().integer().min(1).required(),
   MAX_USERS_PER_TENANT: Joi.number().integer().min(1).required(),
@@ -14,4 +18,22 @@ export const envValidationSchema = Joi.object({
     .required(),
   LOG_FORMAT: Joi.string().valid('pretty', 'json').required(),
   LOG_SLOW_MS: Joi.number().integer().min(0).required(),
+  CORS_ORIGIN: Joi.string()
+    .optional()
+    .allow('')
+    .custom((value: string | undefined, helpers) => {
+      if (value === undefined || value === '') {
+        return value;
+      }
+
+      const error = validateCorsOriginsString(value);
+      if (error) {
+        return helpers.error('cors.invalid', { message: error });
+      }
+
+      return value;
+    })
+    .messages({
+      'cors.invalid': '{{#message}}',
+    }),
 });
