@@ -8,6 +8,7 @@ import { RequestContextService } from '../../../infrastructure/logger/request-co
 import { AppError, ERRORS } from '../../../shared/errors';
 import { JwtPayload } from '../../../shared/interfaces/jwt-payload.interface';
 import { RequestUser } from '../../../shared/interfaces/request-user.interface';
+import { toObjectIdString } from '../../../shared/utils/mongo-id.util';
 import { UserStatus } from '../../../shared/constants/roles.enum';
 import { User, UserDocument } from '../../users/schemas/user.schema';
 
@@ -43,7 +44,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new AppError(ERRORS.AUTH.TENANT_MISMATCH);
     }
 
-    if (user.role_id.toString() !== payload.role_id) {
+    if (toObjectIdString(user.role_id) !== payload.role_id) {
       throw new AppError(ERRORS.AUTH.INVALID_TOKEN);
     }
 
@@ -56,7 +57,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       userId: user._id.toString(),
       tenantId: user.tenant_id.toString(),
       email: user.email,
-      roleId: user.role_id.toString(),
+      roleId: toObjectIdString(user.role_id),
       username: user.username,
     };
   }

@@ -12,6 +12,7 @@ import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS, AUDIT_MODULES } from '../audit/constants/audit.constants';
 import { UserStatus } from '../../shared/constants/roles.enum';
 import { JwtPayload } from '../../shared/interfaces/jwt-payload.interface';
+import { toObjectIdString } from '../../shared/utils/mongo-id.util';
 import { SettingsService } from '../settings/settings.service';
 import { RbacService } from '../rbac/rbac.service';
 import { TenantsService } from '../tenants/tenants.service';
@@ -164,7 +165,7 @@ export class AuthService {
       sub: user._id.toString(),
       tenant_id: user.tenant_id.toString(),
       email: user.email,
-      role_id: user.role_id.toString(),
+      role_id: toObjectIdString(user.role_id),
     };
 
     const access_token = await this.jwtService.signAsync(payload);
@@ -237,13 +238,13 @@ export class AuthService {
     _id: Types.ObjectId;
     tenant_id: Types.ObjectId;
     email: string;
-    role_id: Types.ObjectId;
+    role_id: Types.ObjectId | { _id: Types.ObjectId };
   }) {
     const payload: JwtPayload = {
       sub: user._id.toString(),
       tenant_id: user.tenant_id.toString(),
       email: user.email,
-      role_id: user.role_id.toString(),
+      role_id: toObjectIdString(user.role_id),
     };
 
     const access_token = await this.jwtService.signAsync(payload);

@@ -41,17 +41,21 @@ export class UsersService {
   }
 
   async findByEmail(email: string): Promise<UserDocument | null> {
-    return this.userModel.findOne({
-      email: email.toLowerCase(),
-      is_deleted: false,
-    });
+    return this.userModel
+      .findOne({
+        email: email.toLowerCase(),
+        is_deleted: false,
+      })
+      .populate('role_id', 'code name');
   }
 
   async findById(id: string): Promise<UserDocument | null> {
-    return this.userModel.findOne({
-      _id: id,
-      is_deleted: false,
-    });
+    return this.userModel
+      .findOne({
+        _id: id,
+        is_deleted: false,
+      })
+      .populate('role_id', 'code name');
   }
 
   async findByIdInTenant(
