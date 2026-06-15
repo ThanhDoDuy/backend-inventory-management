@@ -121,6 +121,200 @@ export const ERRORS = {
       httpStatus: HttpStatus.CONFLICT,
     },
   },
+  PRODUCT: {
+    NOT_FOUND: {
+      errorCode: 6000,
+      message: 'Product not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    SKU_EXISTS: {
+      errorCode: 6001,
+      message: 'SKU already exists in this store',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    BARCODE_EXISTS: {
+      errorCode: 6002,
+      message: 'Barcode already exists in this store',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+  },
+  CATEGORY: {
+    NOT_FOUND: {
+      errorCode: 6100,
+      message: 'Category not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    NAME_EXISTS: {
+      errorCode: 6101,
+      message: 'Category name already exists in this store',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    CATEGORY_IN_USE: {
+      errorCode: 6102,
+      message: 'Category is assigned to products and cannot be deleted',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+  },
+  INVENTORY: {
+    INSUFFICIENT_STOCK: {
+      errorCode: 6200,
+      message: 'Insufficient stock',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    DUPLICATE_TRANSACTION: {
+      errorCode: 6201,
+      message: 'Inventory transaction already exists for this reference',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    PRODUCT_NOT_FOUND: {
+      errorCode: 6202,
+      message: 'Product not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    LOCK_ACQUISITION_FAILED: {
+      errorCode: 6203,
+      message: 'Could not acquire inventory lock, please retry',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    INVALID_QUANTITY: {
+      errorCode: 6204,
+      message: 'Invalid quantity',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    BALANCE_NOT_FOUND: {
+      errorCode: 6205,
+      message: 'Inventory balance not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+  },
+  SUPPLIER: {
+    NOT_FOUND: {
+      errorCode: 6300,
+      message: 'Supplier not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    EMAIL_IN_USE: {
+      errorCode: 6301,
+      message: 'Email already in use for this store',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    ALREADY_DISABLED: {
+      errorCode: 6302,
+      message: 'Supplier is already disabled',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    HAS_PURCHASE_ORDERS: {
+      errorCode: 6303,
+      message: 'Cannot delete supplier with existing purchase orders',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+  },
+  CUSTOMER: {
+    NOT_FOUND: {
+      errorCode: 6400,
+      message: 'Customer not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    EMAIL_IN_USE: {
+      errorCode: 6401,
+      message: 'Email already in use for this store',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    ALREADY_DISABLED: {
+      errorCode: 6402,
+      message: 'Customer is already disabled',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    HAS_INVOICES: {
+      errorCode: 6403,
+      message: 'Cannot delete customer with existing invoices',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+  },
+  PO: {
+    NOT_FOUND: {
+      errorCode: 6500,
+      message: 'Purchase order not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    NOT_DRAFT: {
+      errorCode: 6501,
+      message: 'Purchase order can only be updated while in DRAFT status',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    INVALID_STATUS: {
+      errorCode: 6502,
+      message: 'Purchase order status does not allow this action',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    LOCK_ACQUISITION_FAILED: {
+      errorCode: 6503,
+      message: 'Could not acquire purchase order lock, please retry',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    ITEM_NOT_FOUND: {
+      errorCode: 6504,
+      message: 'Product is not part of this purchase order',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    RECEIVE_QUANTITY_EXCEEDED: {
+      errorCode: 6505,
+      message: 'Received quantity exceeds remaining ordered quantity',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    NO_ITEMS: {
+      errorCode: 6506,
+      message: 'Purchase order must have at least one item',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    ALREADY_CANCELLED: {
+      errorCode: 6507,
+      message: 'Purchase order is already cancelled',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+  },
+  INVOICE: {
+    NOT_FOUND: {
+      errorCode: 6600,
+      message: 'Invoice not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    INVALID_STATUS: {
+      errorCode: 6601,
+      message: 'Invoice status does not allow this operation',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    EMPTY_ITEMS: {
+      errorCode: 6602,
+      message: 'At least one invoice item is required',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    CUSTOMER_NOT_FOUND: {
+      errorCode: 6603,
+      message: 'Customer not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    DISCOUNT_EXCEEDED: {
+      errorCode: 6604,
+      message: 'Discount exceeds allowed limit for your role',
+      httpStatus: HttpStatus.FORBIDDEN,
+    },
+    REFUND_QUANTITY_EXCEEDED: {
+      errorCode: 6605,
+      message: 'Refund quantity exceeds purchased or remaining quantity',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    PRODUCT_INACTIVE: {
+      errorCode: 6606,
+      message: 'Product is not available for sale',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    HAS_REFUNDS: {
+      errorCode: 6607,
+      message: 'Cannot cancel invoice with existing refunds',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+  },
   RBAC: {
     ROLE_NOT_FOUND: {
       errorCode: 5000,

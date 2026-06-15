@@ -2,76 +2,80 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { RedisService } from '../../infrastructure/redis/redis.service';
 import { AppError, ERRORS } from '../../shared/errors';
 import { PERMISSIONS } from '../../shared/constants/permission.constants';
 import { Role as RoleCode } from '../../shared/constants/roles.enum';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { SEED_ROLES } from './constants/rbac-seed.data';
+import {
+  RBAC_CACHE_TTL_SECONDS,
+  RBAC_PERMISSIONS_CACHE_KEY,
+  rbacRoleCacheKey,
+  rbacTenantRolesCachePattern,
+} from './constants/rbac-cache.constants';
 import { CreateRoleDto, UpdateRoleDto } from './dto/role.dto';
 import { Permission, PermissionDocument } from './schemas/permission.schema';
 import { Role, RoleDocument } from './schemas/role.schema';
 
 const RESERVED_SYSTEM_CODES = new Set<string>(Object.values(RoleCode));
 
-interface RoleCacheEntry {
+interface RoleCachePayload {
   isWildcard: boolean;
-  permissions: Set<string>;
+  permissionCodes: string[];
 }
 
 @Injectable()
 export class RbacService {
-  private roleCache = new Map<string, RoleCacheEntry>();
-
   constructor(
     @InjectModel(Permission.name)
     private permissionModel: Model<PermissionDocument>,
     @InjectModel(Role.name) private roleModel: Model<RoleDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private readonly redisService: RedisService,
     private readonly logger: AppLoggerService,
   ) {}
 
-  async refreshCache(): Promise<void> {
-    this.logger.step('RbacService.refreshCache', {});
-
-    const roles = await this.roleModel
-      .find({ is_active: true })
-      .select('_id is_wildcard permission_codes')
-      .lean();
-
-    const nextCache = new Map<string, RoleCacheEntry>();
-    for (const role of roles) {
-      nextCache.set(role._id.toString(), {
-        isWildcard: role.is_wildcard,
-        permissions: new Set(role.permission_codes),
-      });
-    }
-
-    this.roleCache = nextCache;
-  }
-
-  hasPermission(roleId: string, required: string): boolean {
-    const role = this.roleCache.get(roleId);
+  async hasPermission(
+    tenantId: string,
+    roleId: string,
+    required: string,
+  ): Promise<boolean> {
+    const role = await this.getRolePermissions(tenantId, roleId);
     if (!role) {
       return false;
     }
 
-    if (role.isWildcard || role.permissions.has(PERMISSIONS.WILDCARD)) {
+    if (role.isWildcard || role.permissionCodes.includes(PERMISSIONS.WILDCARD)) {
       return true;
     }
 
-    if (role.permissions.has(required)) {
+    if (role.permissionCodes.includes(required)) {
       return true;
     }
 
     const [resource] = required.split(':');
-    return role.permissions.has(`${resource}:*`);
+    return role.permissionCodes.includes(`${resource}:*`);
   }
 
   async listPermissions() {
-    return this.permissionModel
+    const cached = await this.redisService.get(RBAC_PERMISSIONS_CACHE_KEY);
+    if (cached) {
+      return JSON.parse(cached) as Permission[];
+    }
+
+    const permissions = await this.permissionModel
       .find({ is_active: true })
       .sort({ module: 1, action: 1 })
       .lean();
+
+    await this.redisService.set(
+      RBAC_PERMISSIONS_CACHE_KEY,
+      JSON.stringify(permissions),
+      RBAC_CACHE_TTL_SECONDS,
+    );
+
+    return permissions;
   }
 
   async listRoles(tenantId: string) {
@@ -159,7 +163,7 @@ export class RbacService {
       is_active: true,
     });
 
-    await this.refreshCache();
+    await this.cacheRoleFromDocument(tenantId, role);
     return role.toObject();
   }
 
@@ -195,7 +199,8 @@ export class RbacService {
     }
 
     await role.save();
-    await this.refreshCache();
+    await this.invalidateRoleCache(tenantId, id);
+    await this.cacheRoleFromDocument(tenantId, role);
     return role.toObject();
   }
 
@@ -230,8 +235,27 @@ export class RbacService {
 
     role.is_active = false;
     await role.save();
-    await this.refreshCache();
+    await this.invalidateRoleCache(tenantId, id);
     return { message: 'Role deleted successfully' };
+  }
+
+  async clearRbacCache(tenantId: string) {
+    this.logger.step('RbacService.clearRbacCache', { tenantId });
+
+    const [rolesDeleted, permissionsCleared] = await Promise.all([
+      this.redisService.delByPattern(rbacTenantRolesCachePattern(tenantId)),
+      this.clearPermissionsCache(),
+    ]);
+
+    return {
+      message: 'RBAC cache cleared successfully',
+      roles_deleted: rolesDeleted,
+      permissions_cache_cleared: permissionsCleared,
+    };
+  }
+
+  async clearRbacCacheForSeed(): Promise<void> {
+    await this.clearPermissionsCache();
   }
 
   async seedRolesForTenant(tenantId: string): Promise<void> {
@@ -251,25 +275,126 @@ export class RbacService {
         activePermissionCodes.has(code),
       );
 
+      const setFields: Record<string, unknown> = {
+        name: seedRole.name,
+        description: seedRole.description,
+        is_system: true,
+        is_active: true,
+      };
+
+      if (seedRole.is_wildcard) {
+        setFields.is_wildcard = true;
+        setFields.permission_codes = [PERMISSIONS.WILDCARD];
+      }
+
       await this.roleModel.updateOne(
         { tenant_id: tenantObjectId, code: seedRole.code },
         {
-          $set: {
-            name: seedRole.name,
-            description: seedRole.description,
-            is_system: true,
-            is_active: true,
-          },
+          $set: setFields,
           $setOnInsert: {
             tenant_id: tenantObjectId,
             code: seedRole.code,
-            is_wildcard: seedRole.is_wildcard,
-            permission_codes: permissionCodes,
+            ...(!seedRole.is_wildcard && {
+              is_wildcard: false,
+              permission_codes: permissionCodes,
+            }),
           },
         },
         { upsert: true },
       );
     }
+
+    await this.clearRbacCache(tenantId);
+    await this.warmTenantRoleCaches(tenantId);
+  }
+
+  private async getRolePermissions(
+    tenantId: string,
+    roleId: string,
+  ): Promise<RoleCachePayload | null> {
+    const cacheKey = rbacRoleCacheKey(tenantId, roleId);
+    const cached = await this.redisService.get(cacheKey);
+
+    if (cached) {
+      return JSON.parse(cached) as RoleCachePayload;
+    }
+
+    const role = await this.roleModel
+      .findOne({
+        _id: roleId,
+        tenant_id: new Types.ObjectId(tenantId),
+        is_active: true,
+      })
+      .select('is_wildcard permission_codes')
+      .lean();
+
+    if (!role) {
+      return null;
+    }
+
+    const payload: RoleCachePayload = {
+      isWildcard: role.is_wildcard,
+      permissionCodes: role.permission_codes,
+    };
+
+    await this.redisService.set(
+      cacheKey,
+      JSON.stringify(payload),
+      RBAC_CACHE_TTL_SECONDS,
+    );
+
+    return payload;
+  }
+
+  private async cacheRoleFromDocument(
+    tenantId: string,
+    role: Pick<RoleDocument, '_id' | 'is_wildcard' | 'permission_codes'>,
+  ): Promise<void> {
+    const payload: RoleCachePayload = {
+      isWildcard: role.is_wildcard,
+      permissionCodes: role.permission_codes,
+    };
+
+    await this.redisService.set(
+      rbacRoleCacheKey(tenantId, role._id.toString()),
+      JSON.stringify(payload),
+      RBAC_CACHE_TTL_SECONDS,
+    );
+  }
+
+  private async invalidateRoleCache(
+    tenantId: string,
+    roleId: string,
+  ): Promise<void> {
+    await this.redisService.del(rbacRoleCacheKey(tenantId, roleId));
+  }
+
+  private async clearPermissionsCache(): Promise<boolean> {
+    await this.redisService.del(RBAC_PERMISSIONS_CACHE_KEY);
+    return true;
+  }
+
+  private async warmTenantRoleCaches(tenantId: string): Promise<void> {
+    const roles = await this.roleModel
+      .find({
+        tenant_id: new Types.ObjectId(tenantId),
+        is_active: true,
+      })
+      .select('_id is_wildcard permission_codes')
+      .lean();
+
+    await Promise.all(
+      roles.map((role) =>
+        this.redisService.set(
+          rbacRoleCacheKey(tenantId, role._id.toString()),
+          JSON.stringify({
+            isWildcard: role.is_wildcard,
+            permissionCodes: role.permission_codes,
+          } satisfies RoleCachePayload),
+          RBAC_CACHE_TTL_SECONDS,
+        ),
+      ),
+    );
   }
 
   private async resolvePermissionCodes(

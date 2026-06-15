@@ -37,14 +37,18 @@ export class RbacSeedService implements OnApplicationBootstrap {
     this.logger.step('RbacSeedService.seed', {});
 
     await this.seedPermissions();
+    await this.clearPermissionsCacheOnSeed();
     await this.roleModel.deleteMany({ tenant_id: { $exists: false } });
     await this.ensureTenantRoles();
     await this.migrateLegacyUsers();
-    await this.rbacService.refreshCache();
 
     this.logger.step('RbacSeedService.seed.completed', {
       permissions: SEED_PERMISSIONS.length,
     });
+  }
+
+  private async clearPermissionsCacheOnSeed(): Promise<void> {
+    await this.rbacService.clearRbacCacheForSeed();
   }
 
   private async seedPermissions(): Promise<void> {

@@ -18,7 +18,7 @@ export class PermissionsGuard implements CanActivate {
     private readonly logger: AppLoggerService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.reflector.getAllAndOverride<string>(PERMISSION_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -32,7 +32,14 @@ export class PermissionsGuard implements CanActivate {
     if (!user?.tenantId) {
       throw new AppError(ERRORS.AUTH.TENANT_CONTEXT_REQUIRED);
     }
-    if (!this.rbacService.hasPermission(user.roleId, required)) {
+
+    const allowed = await this.rbacService.hasPermission(
+      user.tenantId,
+      user.roleId,
+      required,
+    );
+
+    if (!allowed) {
       this.logger.warn('PermissionsGuard.canActivate', {
         userId: user.userId,
         roleId: user.roleId,
@@ -42,6 +49,7 @@ export class PermissionsGuard implements CanActivate {
         message: `Permission denied: ${required}`,
       });
     }
+
     return true;
   }
 }

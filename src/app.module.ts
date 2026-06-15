@@ -19,6 +19,12 @@ import { TenantsModule } from './modules/tenants/tenants.module';
 import { UsersModule } from './modules/users/users.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { RbacModule } from './modules/rbac/rbac.module';
+import { SuppliersModule } from './modules/suppliers/suppliers.module';
+import { CustomersModule } from './modules/customers/customers.module';
+import { ProductsModule } from './modules/products/products.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
+import { InvoicesModule } from './modules/invoices/invoices.module';
+import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
 import { JwtAuthGuard } from './shared/guards/jwt-auth.guard';
 import { PermissionsGuard } from './shared/guards/permissions.guard';
 import { TransformInterceptor } from './shared/interceptors/transform.interceptor';
@@ -50,6 +56,12 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
     UsersModule,
     SettingsModule,
     RbacModule,
+    SuppliersModule,
+    CustomersModule,
+    ProductsModule,
+    InventoryModule,
+    InvoicesModule,
+    PurchaseOrdersModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

@@ -57,4 +57,10 @@ export class RbacController {
   deleteRole(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.rbacService.deleteRole(user.tenantId, id);
   }
+
+  @Post('cache/clear')
+  @RequirePermission(PERMISSIONS.RBAC.UPDATE)
+  clearCache(@CurrentUser() user: RequestUser) {
+    return this.rbacService.clearRbacCache(user.tenantId);
+  }
 }
