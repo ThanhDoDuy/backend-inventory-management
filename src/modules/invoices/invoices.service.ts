@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { DomainEventPublisher } from '../../infrastructure/queue/domain-event.publisher';
+import { DOMAIN_EVENTS } from '../../infrastructure/queue/queue.constants';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS, AUDIT_MODULES } from '../audit/constants/audit.constants';
 import {
   InvoiceStatus,
   PaymentMethod,
@@ -60,6 +64,8 @@ export class InvoicesService {
     private inventoryService: InventoryService,
     private settingsService: SettingsService,
     private rbacService: RbacService,
+    private domainEventPublisher: DomainEventPublisher,
+    private auditService: AuditService,
     private readonly logger: AppLoggerService,
   ) {}
 
@@ -183,6 +189,30 @@ export class InvoicesService {
       }
 
       await session.commitTransaction();
+
+      for (const item of lineItems) {
+        void this.inventoryService.checkLowStockAlert(tenantId, item.productId);
+      }
+
+      void this.domainEventPublisher.publish({
+        type: DOMAIN_EVENTS.INVOICE_PAID,
+        tenantId,
+        actorUserId: userId,
+        data: {
+          invoiceId,
+          invoiceNumber,
+          total,
+        },
+      });
+
+      this.auditService.emit({
+        tenantId,
+        userId,
+        action: AUDIT_ACTIONS.CREATE_INVOICE,
+        module: AUDIT_MODULES.INVOICE,
+        entityId: invoiceId,
+        newValue: { invoice_number: invoiceNumber, total, status: 'PAID' },
+      });
 
       return this.getById(tenantId, invoiceId);
     } catch (error) {

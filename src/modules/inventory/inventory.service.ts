@@ -7,6 +7,8 @@ import {
   Types,
 } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { DomainEventPublisher } from '../../infrastructure/queue/domain-event.publisher';
+import { DOMAIN_EVENTS } from '../../infrastructure/queue/queue.constants';
 import { RedisService } from '../../infrastructure/redis/redis.service';
 import { AppError, ERRORS } from '../../shared/errors';
 import { ProductsService } from '../products/products.service';
@@ -80,6 +82,7 @@ export class InventoryService {
     private productsService: ProductsService,
     private settingsService: SettingsService,
     private redisService: RedisService,
+    private domainEventPublisher: DomainEventPublisher,
     private readonly logger: AppLoggerService,
   ) {}
 
@@ -219,7 +222,59 @@ export class InventoryService {
         }),
     );
 
+    void this.checkLowStockAlert(tenantId, dto.productId);
     return this.toTransactionView(transaction);
+  }
+
+  async checkLowStockAlert(tenantId: string, productId: string): Promise<void> {
+    const enabled = await this.settingsService.isFeatureEnabled(
+      tenantId,
+      'enable_low_stock_alert',
+      true,
+    );
+    if (!enabled) {
+      return;
+    }
+
+    const product = await this.productsService.findByIdInTenant(
+      tenantId,
+      productId,
+    );
+    if (!product) {
+      return;
+    }
+
+    const balance = await this.balanceModel
+      .findOne({
+        tenant_id: new Types.ObjectId(tenantId),
+        product_id: new Types.ObjectId(productId),
+      })
+      .lean();
+
+    const availableQuantity = balance?.available_quantity ?? 0;
+    let minimumStock = product.minimum_stock;
+    if (minimumStock <= 0) {
+      minimumStock = await this.settingsService.getNumber(
+        tenantId,
+        'inventory.low_stock_threshold',
+        20,
+      );
+    }
+
+    if (availableQuantity > minimumStock) {
+      return;
+    }
+
+    await this.domainEventPublisher.publish({
+      type: DOMAIN_EVENTS.INVENTORY_LOW_STOCK,
+      tenantId,
+      data: {
+        productId,
+        productName: product.name,
+        availableQuantity,
+        minimumStock,
+      },
+    });
   }
 
   async getBalance(

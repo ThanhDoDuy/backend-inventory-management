@@ -13,12 +13,16 @@ import { LoggerModule } from './infrastructure/logger/logger.module';
 import { RequestIdMiddleware } from './infrastructure/logger/request-id.middleware';
 import { LoggingInterceptor } from './infrastructure/logger/logging.interceptor';
 import { RedisModule } from './infrastructure/redis/redis.module';
+import { QueueModule } from './infrastructure/queue/queue.module';
 import { HealthModule } from './infrastructure/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { UsersModule } from './modules/users/users.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { RbacModule } from './modules/rbac/rbac.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { ReportsModule } from './modules/reports/reports.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { ProductsModule } from './modules/products/products.module';
@@ -51,11 +55,15 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
     }),
     RedisModule,
     HealthModule,
+    AuditModule,
     AuthModule,
     TenantsModule,
     UsersModule,
     SettingsModule,
     RbacModule,
+    NotificationsModule,
+    QueueModule,
+    ReportsModule,
     SuppliersModule,
     CustomersModule,
     ProductsModule,

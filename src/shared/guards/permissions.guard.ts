@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { AuditService } from '../../modules/audit/audit.service';
+import { AUDIT_ACTIONS, AUDIT_MODULES } from '../../modules/audit/constants/audit.constants';
 import { RbacService } from '../../modules/rbac/rbac.service';
 import { AppError, ERRORS } from '../errors';
 import { PERMISSION_KEY } from '../decorators/require-permission.decorator';
@@ -15,6 +17,7 @@ export class PermissionsGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     private readonly rbacService: RbacService,
+    private readonly auditService: AuditService,
     private readonly logger: AppLoggerService,
   ) {}
 
@@ -40,6 +43,14 @@ export class PermissionsGuard implements CanActivate {
     );
 
     if (!allowed) {
+      this.auditService.emit({
+        tenantId: user.tenantId,
+        userId: user.userId,
+        action: AUDIT_ACTIONS.PERMISSION_DENIED,
+        module: AUDIT_MODULES.SECURITY,
+        status: 'FAILED',
+        metadata: { permission: required },
+      });
       this.logger.warn('PermissionsGuard.canActivate', {
         userId: user.userId,
         roleId: user.roleId,

@@ -1,0 +1,485 @@
+import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { RedisService } from '../../infrastructure/redis/redis.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS, AUDIT_MODULES } from '../audit/constants/audit.constants';
+import { InvoiceStatus } from '../../shared/constants/business.enums';
+import { Invoice, InvoiceDocument } from '../invoices/schemas/invoice.schema';
+import { InvoiceItem, InvoiceItemDocument } from '../invoices/schemas/invoice-item.schema';
+import {
+  InventoryBalance,
+  InventoryBalanceDocument,
+} from '../inventory/schemas/inventory-balance.schema';
+import { Product, ProductDocument } from '../products/schemas/product.schema';
+import {
+  REPORT_CACHE_TTL_SECONDS,
+  REPORT_TYPES,
+  ReportType,
+  dashboardCacheKey,
+} from './constants/reports.constants';
+
+interface DateRange {
+  from?: string;
+  to?: string;
+}
+
+@Injectable()
+export class ReportsService {
+  constructor(
+    @InjectModel(Invoice.name) private invoiceModel: Model<InvoiceDocument>,
+    @InjectModel(InvoiceItem.name)
+    private invoiceItemModel: Model<InvoiceItemDocument>,
+    @InjectModel(InventoryBalance.name)
+    private balanceModel: Model<InventoryBalanceDocument>,
+    @InjectModel(Product.name) private productModel: Model<ProductDocument>,
+    private redisService: RedisService,
+    private auditService: AuditService,
+    private readonly logger: AppLoggerService,
+  ) {}
+
+  async getDashboard(tenantId: string, userId: string) {
+    const cacheKey = dashboardCacheKey(tenantId);
+    const cached = await this.redisService.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const tenantObjectId = new Types.ObjectId(tenantId);
+    const now = new Date();
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [
+      revenueToday,
+      revenueMonth,
+      ordersToday,
+      productsSoldToday,
+      lowStockCount,
+      topProducts,
+    ] = await Promise.all([
+      this.sumRevenue(tenantObjectId, startOfToday, now),
+      this.sumRevenue(tenantObjectId, startOfMonth, now),
+      this.countPaidInvoices(tenantObjectId, startOfToday, now),
+      this.sumProductsSold(tenantObjectId, startOfToday, now),
+      this.countLowStock(tenantId),
+      this.getTopProducts(tenantId, { limit: 5 }),
+    ]);
+
+    const dashboard = {
+      revenue_today: revenueToday,
+      revenue_month: revenueMonth,
+      orders_today: ordersToday,
+      products_sold_today: productsSoldToday,
+      low_stock_count: lowStockCount,
+      top_products: topProducts,
+      generated_at: now.toISOString(),
+    };
+
+    await this.redisService.set(
+      cacheKey,
+      JSON.stringify(dashboard),
+      REPORT_CACHE_TTL_SECONDS,
+    );
+
+    this.auditService.emit({
+      tenantId,
+      userId,
+      action: AUDIT_ACTIONS.VIEW_REPORT,
+      module: AUDIT_MODULES.REPORT,
+      metadata: { report: 'dashboard' },
+    });
+
+    return dashboard;
+  }
+
+  async getRevenue(tenantId: string, range: DateRange) {
+    const tenantObjectId = new Types.ObjectId(tenantId);
+    const { fromDate, toDate } = this.resolveRange(range);
+
+    const [total, daily] = await Promise.all([
+      this.sumRevenue(tenantObjectId, fromDate, toDate),
+      this.invoiceModel.aggregate([
+        {
+          $match: {
+            tenant_id: tenantObjectId,
+            status: InvoiceStatus.PAID,
+            is_deleted: false,
+            created_at: { $gte: fromDate, $lte: toDate },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: { format: '%Y-%m-%d', date: '$created_at' },
+            },
+            revenue: { $sum: '$total' },
+            orders: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]),
+    ]);
+
+    return {
+      total_revenue: total,
+      from: fromDate.toISOString(),
+      to: toDate.toISOString(),
+      daily,
+    };
+  }
+
+  async getTopProducts(tenantId: string, options?: { limit?: number } & DateRange) {
+    const tenantObjectId = new Types.ObjectId(tenantId);
+    const limit = options?.limit && options.limit > 0 ? options.limit : 10;
+    const { fromDate, toDate } = this.resolveRange(options ?? {});
+
+    const rows = await this.invoiceItemModel.aggregate([
+      {
+        $match: {
+          tenant_id: tenantObjectId,
+          created_at: { $gte: fromDate, $lte: toDate },
+        },
+      },
+      {
+        $lookup: {
+          from: 'invoices',
+          localField: 'invoice_id',
+          foreignField: '_id',
+          as: 'invoice',
+        },
+      },
+      { $unwind: '$invoice' },
+      {
+        $match: {
+          'invoice.status': InvoiceStatus.PAID,
+          'invoice.is_deleted': false,
+        },
+      },
+      {
+        $group: {
+          _id: '$product_id',
+          quantity_sold: { $sum: '$quantity' },
+          revenue: { $sum: '$total' },
+        },
+      },
+      { $sort: { quantity_sold: -1 } },
+      { $limit: limit },
+      {
+        $lookup: {
+          from: 'products',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'product',
+        },
+      },
+      { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          product_id: '$_id',
+          product_name: '$product.name',
+          sku: '$product.sku',
+          quantity_sold: 1,
+          revenue: 1,
+        },
+      },
+    ]);
+
+    return rows;
+  }
+
+  async getLowStock(tenantId: string) {
+    const tenantObjectId = new Types.ObjectId(tenantId);
+
+    const rows = await this.productModel.aggregate([
+      {
+        $match: {
+          tenant_id: tenantObjectId,
+          is_deleted: false,
+          status: 'ACTIVE',
+        },
+      },
+      {
+        $lookup: {
+          from: 'inventory_balances',
+          let: { productId: '$_id', tenantId: '$tenant_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$product_id', '$$productId'] },
+                    { $eq: ['$tenant_id', '$$tenantId'] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'balance',
+        },
+      },
+      {
+        $addFields: {
+          available_quantity: {
+            $ifNull: [{ $arrayElemAt: ['$balance.available_quantity', 0] }, 0],
+          },
+        },
+      },
+      {
+        $match: {
+          $expr: { $lte: ['$available_quantity', '$minimum_stock'] },
+        },
+      },
+      {
+        $project: {
+          product_id: '$_id',
+          name: 1,
+          sku: 1,
+          minimum_stock: 1,
+          available_quantity: 1,
+        },
+      },
+      { $sort: { available_quantity: 1 } },
+    ]);
+
+    return rows;
+  }
+
+  async getDeadStock(tenantId: string, inactiveDays = 30) {
+    const tenantObjectId = new Types.ObjectId(tenantId);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - inactiveDays);
+
+    const soldProductIds = await this.invoiceItemModel.aggregate([
+      {
+        $match: {
+          tenant_id: tenantObjectId,
+          created_at: { $gte: cutoff },
+        },
+      },
+      {
+        $lookup: {
+          from: 'invoices',
+          localField: 'invoice_id',
+          foreignField: '_id',
+          as: 'invoice',
+        },
+      },
+      { $unwind: '$invoice' },
+      {
+        $match: {
+          'invoice.status': InvoiceStatus.PAID,
+          'invoice.is_deleted': false,
+        },
+      },
+      { $group: { _id: '$product_id' } },
+    ]);
+
+    const soldIds = soldProductIds.map((row) => row._id);
+
+    const rows = await this.productModel.aggregate([
+      {
+        $match: {
+          tenant_id: tenantObjectId,
+          is_deleted: false,
+          status: 'ACTIVE',
+          _id: { $nin: soldIds },
+        },
+      },
+      {
+        $lookup: {
+          from: 'inventory_balances',
+          let: { productId: '$_id', tenantId: '$tenant_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$product_id', '$$productId'] },
+                    { $eq: ['$tenant_id', '$$tenantId'] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'balance',
+        },
+      },
+      {
+        $addFields: {
+          available_quantity: {
+            $ifNull: [{ $arrayElemAt: ['$balance.available_quantity', 0] }, 0],
+          },
+          stock_value: {
+            $multiply: [
+              { $ifNull: [{ $arrayElemAt: ['$balance.available_quantity', 0] }, 0] },
+              '$cost_price',
+            ],
+          },
+        },
+      },
+      {
+        $match: {
+          available_quantity: { $gt: 0 },
+        },
+      },
+      {
+        $project: {
+          product_id: '$_id',
+          name: 1,
+          sku: 1,
+          available_quantity: 1,
+          stock_value: 1,
+          inactive_days: inactiveDays,
+        },
+      },
+      { $sort: { stock_value: -1 } },
+    ]);
+
+    return rows;
+  }
+
+  async exportCsv(
+    tenantId: string,
+    userId: string,
+    type: ReportType,
+    range: DateRange,
+    inactiveDays?: number,
+  ): Promise<string> {
+    let rows: Array<Record<string, unknown>> = [];
+    let header = '';
+
+    switch (type) {
+      case REPORT_TYPES.REVENUE: {
+        const revenue = await this.getRevenue(tenantId, range);
+        header = 'date,revenue,orders';
+        rows = revenue.daily.map((row) => ({
+          date: row._id,
+          revenue: row.revenue,
+          orders: row.orders,
+        }));
+        break;
+      }
+      case REPORT_TYPES.TOP_PRODUCTS: {
+        header = 'product_id,product_name,sku,quantity_sold,revenue';
+        rows = await this.getTopProducts(tenantId, range);
+        break;
+      }
+      case REPORT_TYPES.LOW_STOCK: {
+        header = 'product_id,name,sku,available_quantity,minimum_stock';
+        rows = await this.getLowStock(tenantId);
+        break;
+      }
+      case REPORT_TYPES.DEAD_STOCK: {
+        header =
+          'product_id,name,sku,available_quantity,stock_value,inactive_days';
+        rows = await this.getDeadStock(tenantId, inactiveDays ?? 30);
+        break;
+      }
+      default:
+        header = 'message';
+        rows = [{ message: 'Unsupported report type' }];
+    }
+
+    this.auditService.emit({
+      tenantId,
+      userId,
+      action: AUDIT_ACTIONS.EXPORT_REPORT,
+      module: AUDIT_MODULES.REPORT,
+      metadata: { type, ...range },
+    });
+
+    const csvRows = rows.map((row) =>
+      Object.values(row)
+        .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
+        .join(','),
+    );
+
+    return [header, ...csvRows].join('\n');
+  }
+
+  private async sumRevenue(
+    tenantObjectId: Types.ObjectId,
+    from: Date,
+    to: Date,
+  ): Promise<number> {
+    const [result] = await this.invoiceModel.aggregate([
+      {
+        $match: {
+          tenant_id: tenantObjectId,
+          status: InvoiceStatus.PAID,
+          is_deleted: false,
+          created_at: { $gte: from, $lte: to },
+        },
+      },
+      { $group: { _id: null, total: { $sum: '$total' } } },
+    ]);
+
+    return result?.total ?? 0;
+  }
+
+  private async countPaidInvoices(
+    tenantObjectId: Types.ObjectId,
+    from: Date,
+    to: Date,
+  ): Promise<number> {
+    return this.invoiceModel.countDocuments({
+      tenant_id: tenantObjectId,
+      status: InvoiceStatus.PAID,
+      is_deleted: false,
+      created_at: { $gte: from, $lte: to },
+    });
+  }
+
+  private async sumProductsSold(
+    tenantObjectId: Types.ObjectId,
+    from: Date,
+    to: Date,
+  ): Promise<number> {
+    const [result] = await this.invoiceItemModel.aggregate([
+      {
+        $match: {
+          tenant_id: tenantObjectId,
+          created_at: { $gte: from, $lte: to },
+        },
+      },
+      {
+        $lookup: {
+          from: 'invoices',
+          localField: 'invoice_id',
+          foreignField: '_id',
+          as: 'invoice',
+        },
+      },
+      { $unwind: '$invoice' },
+      {
+        $match: {
+          'invoice.status': InvoiceStatus.PAID,
+          'invoice.is_deleted': false,
+        },
+      },
+      { $group: { _id: null, total: { $sum: '$quantity' } } },
+    ]);
+
+    return result?.total ?? 0;
+  }
+
+  private async countLowStock(tenantId: string): Promise<number> {
+    const rows = await this.getLowStock(tenantId);
+    return rows.length;
+  }
+
+  private resolveRange(range: DateRange): { fromDate: Date; toDate: Date } {
+    const toDate = range.to ? new Date(range.to) : new Date();
+    const fromDate = range.from
+      ? new Date(range.from)
+      : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    return { fromDate, toDate };
+  }
+}

@@ -347,4 +347,42 @@ export const ERRORS = {
       httpStatus: HttpStatus.BAD_REQUEST,
     },
   },
+  SETTINGS: {
+    NOT_FOUND: {
+      errorCode: 7000,
+      message: 'Setting not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    INVALID_VALUE: {
+      errorCode: 7001,
+      message: 'Invalid setting value',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    FEATURE_FLAG_NOT_FOUND: {
+      errorCode: 7002,
+      message: 'Feature flag not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+  },
+  REPORT: {
+    INVALID_TYPE: {
+      errorCode: 7100,
+      message: 'Invalid report type',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+  },
+  NOTIFICATION: {
+    NOT_FOUND: {
+      errorCode: 7200,
+      message: 'Notification not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+  },
+  AUDIT: {
+    NOT_FOUND: {
+      errorCode: 7300,
+      message: 'Audit log not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+  },
 } as const satisfies Record<string, Record<string, ErrorDefinition>>;

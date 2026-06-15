@@ -8,6 +8,8 @@ import { randomBytes } from 'crypto';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { AppError, ERRORS } from '../../shared/errors';
 import { RedisService } from '../../infrastructure/redis/redis.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS, AUDIT_MODULES } from '../audit/constants/audit.constants';
 import { UserStatus } from '../../shared/constants/roles.enum';
 import { JwtPayload } from '../../shared/interfaces/jwt-payload.interface';
 import { SettingsService } from '../settings/settings.service';
@@ -34,6 +36,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private redisService: RedisService,
+    private auditService: AuditService,
     @InjectModel(RefreshToken.name)
     private refreshTokenModel: Model<RefreshTokenDocument>,
     private readonly logger: AppLoggerService,
@@ -70,6 +73,13 @@ export class AuthService {
     await tenant.save();
 
     const tokens = await this.issueTokens(owner);
+    this.auditService.emit({
+      tenantId: tenant._id.toString(),
+      userId: owner._id.toString(),
+      action: AUDIT_ACTIONS.LOGIN,
+      module: AUDIT_MODULES.AUTH,
+      metadata: { event: 'REGISTER_TENANT' },
+    });
     return {
       ...tokens,
       user: this.usersService.toProfile(owner),
@@ -90,6 +100,12 @@ export class AuthService {
         email: dto.email,
         reason: 'user_not_found',
       });
+      this.auditService.emit({
+        action: AUDIT_ACTIONS.LOGIN_FAILED,
+        module: AUDIT_MODULES.SECURITY,
+        status: 'FAILED',
+        metadata: { email: dto.email, reason: 'user_not_found' },
+      });
       throw new AppError(ERRORS.AUTH.INVALID_CREDENTIALS);
     }
     if (user.status !== UserStatus.ACTIVE) {
@@ -102,11 +118,25 @@ export class AuthService {
         email: dto.email,
         reason: 'invalid_password',
       });
+      this.auditService.emit({
+        tenantId: user.tenant_id.toString(),
+        userId: user._id.toString(),
+        action: AUDIT_ACTIONS.LOGIN_FAILED,
+        module: AUDIT_MODULES.SECURITY,
+        status: 'FAILED',
+        metadata: { email: dto.email, reason: 'invalid_password' },
+      });
       throw new AppError(ERRORS.AUTH.INVALID_CREDENTIALS);
     }
 
     await this.usersService.updateLastLogin(user._id.toString());
     const tokens = await this.issueTokens(user);
+    this.auditService.emit({
+      tenantId: user.tenant_id.toString(),
+      userId: user._id.toString(),
+      action: AUDIT_ACTIONS.LOGIN,
+      module: AUDIT_MODULES.AUTH,
+    });
     return {
       ...tokens,
       user: this.usersService.toProfile(user),
@@ -160,6 +190,13 @@ export class AuthService {
       this.redisService.tenantKey(tenantId, 'refresh_token', userId),
     );
 
+    this.auditService.emit({
+      tenantId,
+      userId,
+      action: AUDIT_ACTIONS.LOGOUT,
+      module: AUDIT_MODULES.AUTH,
+    });
+
     return { message: 'Logout successfully' };
   }
 
@@ -184,6 +221,15 @@ export class AuthService {
       dto.old_password,
       dto.new_password,
     );
+
+    const user = await this.usersService.findById(userId);
+    this.auditService.emit({
+      tenantId: user?.tenant_id.toString(),
+      userId,
+      action: AUDIT_ACTIONS.PASSWORD_CHANGED,
+      module: AUDIT_MODULES.AUTH,
+    });
+
     return { message: 'Password changed successfully' };
   }
 

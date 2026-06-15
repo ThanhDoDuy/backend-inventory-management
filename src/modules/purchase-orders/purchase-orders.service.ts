@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { DomainEventPublisher } from '../../infrastructure/queue/domain-event.publisher';
+import { DOMAIN_EVENTS } from '../../infrastructure/queue/queue.constants';
 import { RedisService } from '../../infrastructure/redis/redis.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS, AUDIT_MODULES } from '../audit/constants/audit.constants';
 import { PoStatus } from '../../shared/constants/business.enums';
 import { AppError, ERRORS } from '../../shared/errors';
 import { InventoryReferenceType } from '../inventory/constants/inventory.enums';
@@ -73,6 +77,8 @@ export class PurchaseOrdersService {
     private productsService: ProductsService,
     private inventoryService: InventoryService,
     private redisService: RedisService,
+    private domainEventPublisher: DomainEventPublisher,
+    private auditService: AuditService,
     private readonly logger: AppLoggerService,
   ) {}
 
@@ -401,6 +407,36 @@ export class PurchaseOrdersService {
         await purchaseOrder.save({ session });
 
         await session.commitTransaction();
+
+        for (const receiveItem of dto.items) {
+          void this.inventoryService.checkLowStockAlert(
+            tenantId,
+            receiveItem.productId,
+          );
+        }
+
+        void this.domainEventPublisher.publish({
+          type: DOMAIN_EVENTS.PO_RECEIVED,
+          tenantId,
+          actorUserId: userId,
+          data: {
+            purchaseOrderId: id,
+            poNumber: purchaseOrder.po_number,
+            status: purchaseOrder.status,
+          },
+        });
+
+        this.auditService.emit({
+          tenantId,
+          userId,
+          action: AUDIT_ACTIONS.RECEIVE_PO,
+          module: AUDIT_MODULES.PO,
+          entityId: id,
+          newValue: {
+            po_number: purchaseOrder.po_number,
+            status: purchaseOrder.status,
+          },
+        });
 
         return this.getById(tenantId, id);
       } catch (error) {
