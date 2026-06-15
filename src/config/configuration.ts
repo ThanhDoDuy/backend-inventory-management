@@ -1,9 +1,13 @@
+import { parseCorsOrigins } from './cors.util';
+
 export default () => ({
+  nodeEnv: process.env.NODE_ENV ?? 'development',
   port: parseInt(process.env.PORT!, 10),
   maxTenants: parseInt(process.env.MAX_TENANTS!, 10),
   maxUsersPerTenant: parseInt(process.env.MAX_USERS_PER_TENANT!, 10),
   mongodbUri: process.env.MONGODB_URI!,
   redisUrl: process.env.REDIS_URL!,
+  corsOrigins: parseCorsOrigins(process.env.CORS_ORIGIN),
   jwt: {
     secret: process.env.JWT_SECRET!,
     accessExpires: process.env.JWT_ACCESS_EXPIRES!,
