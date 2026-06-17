@@ -544,7 +544,7 @@ export class InventoryService {
           version: 1,
         },
       },
-      { upsert: true, session, new: true },
+      { upsert: true, session, returnDocument: 'after' },
     );
 
     return transaction;

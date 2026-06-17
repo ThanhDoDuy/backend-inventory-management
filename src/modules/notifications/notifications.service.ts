@@ -80,7 +80,7 @@ export class NotificationsService {
           read_at: new Date(),
         },
       },
-      { new: true },
+      { returnDocument: 'after' },
     );
 
     if (!notification) {
