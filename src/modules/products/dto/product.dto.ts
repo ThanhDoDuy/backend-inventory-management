@@ -1,6 +1,7 @@
 import {
   IsMongoId,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Min,
@@ -28,6 +29,10 @@ export class CreateProductDto {
   @IsNumber()
   @Min(0)
   selling_price: number;
+
+  @IsOptional()
+  @IsObject()
+  prices?: Record<string, number>;
 
   @IsOptional()
   @IsNumber()
@@ -65,6 +70,10 @@ export class UpdateProductDto {
   @IsNumber()
   @Min(0)
   selling_price?: number;
+
+  @IsOptional()
+  @IsObject()
+  prices?: Record<string, number>;
 
   @IsOptional()
   @IsNumber()

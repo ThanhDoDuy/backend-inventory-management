@@ -18,6 +18,7 @@ import { CustomersService } from '../customers/customers.service';
 import { InventoryReferenceType } from '../inventory/constants/inventory.enums';
 import { InventoryService } from '../inventory/inventory.service';
 import { ProductsService } from '../products/products.service';
+import { PriceTiersService } from '../price-tiers/price-tiers.service';
 import { RbacService } from '../rbac/rbac.service';
 import { SettingsService } from '../settings/settings.service';
 import { Tenant, TenantDocument } from '../tenants/schemas/tenant.schema';
@@ -37,6 +38,8 @@ interface ResolvedLineItem {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  priceTierCode: string;
+  priceTierLabel: string;
 }
 
 interface RefundedQuantityMap {
@@ -60,6 +63,7 @@ export class InvoicesService {
     private tenantModel: Model<TenantDocument>,
     @InjectConnection() private connection: Connection,
     private productsService: ProductsService,
+    private priceTiersService: PriceTiersService,
     private customersService: CustomersService,
     private inventoryService: InventoryService,
     private settingsService: SettingsService,
@@ -84,7 +88,9 @@ export class InvoicesService {
       throw new AppError(ERRORS.INVOICE.EMPTY_ITEMS);
     }
 
-    const discountPercent = dto.discount ?? 0;
+    const discountPercent = dto.discountPercent ?? dto.discount ?? 0;
+    const discountAmountFixed = dto.discountAmount ?? 0;
+    const taxPercent = dto.taxPercent ?? 0;
 
     if (dto.customerId) {
       const customer = await this.customersService.findByIdInTenant(
@@ -104,9 +110,15 @@ export class InvoicesService {
     const subtotal = this.roundMoney(
       lineItems.reduce((sum, item) => sum + item.lineTotal, 0),
     );
-    const discountAmount = this.roundMoney(subtotal * (discountPercent / 100));
-    const tax = 0;
-    const total = this.roundMoney(subtotal - discountAmount + tax);
+    const discountFromPercent = this.roundMoney(
+      subtotal * (discountPercent / 100),
+    );
+    const discountAmount = this.roundMoney(
+      discountFromPercent + discountAmountFixed,
+    );
+    const taxableAmount = this.roundMoney(subtotal - discountAmount);
+    const tax = this.roundMoney(taxableAmount * (taxPercent / 100));
+    const total = this.roundMoney(taxableAmount + tax);
 
     const session = await this.connection.startSession();
     session.startTransaction();
@@ -126,6 +138,8 @@ export class InvoicesService {
               : undefined,
             subtotal,
             discount: discountPercent,
+            discount_amount: discountAmount,
+            tax_percent: taxPercent,
             tax,
             total,
             payment_method: dto.paymentMethod,
@@ -149,6 +163,8 @@ export class InvoicesService {
           quantity: item.quantity,
           unit_price: item.unitPrice,
           total: item.lineTotal,
+          price_tier_code: item.priceTierCode,
+          price_tier_label: item.priceTierLabel,
         })),
         { session },
       );
@@ -173,7 +189,7 @@ export class InvoicesService {
           item.productId,
           item.quantity,
           InventoryReferenceType.INVOICE,
-          `${invoiceId}:${item.productId}`,
+          `${invoiceId}:${item.productId}:${item.priceTierCode}`,
           userId,
           session,
         );
@@ -327,6 +343,8 @@ export class InvoicesService {
         quantity: item.quantity,
         unit_price: item.unit_price,
         total: item.total,
+        price_tier_code: item.price_tier_code ?? 'RETAIL',
+        price_tier_label: item.price_tier_label ?? '',
       })),
       payments: payments.map((payment) => ({
         id: payment._id,
@@ -394,7 +412,7 @@ export class InvoicesService {
           productId,
           item.quantity,
           InventoryReferenceType.INVOICE,
-          `${id}:cancel:${productId}`,
+          `${id}:cancel:${productId}:${item.price_tier_code ?? 'RETAIL'}`,
           userId,
           session,
         );
@@ -635,6 +653,7 @@ export class InvoicesService {
     items: CreateInvoiceDto['items'],
   ): Promise<ResolvedLineItem[]> {
     const resolved: ResolvedLineItem[] = [];
+    const tierMap = await this.priceTiersService.getTierMap(tenantId);
 
     for (const item of items) {
       const product = await this.productsService.findByIdInTenant(
@@ -654,7 +673,36 @@ export class InvoicesService {
         });
       }
 
-      const unitPrice = item.unitPrice ?? product.selling_price;
+      const tierCode = item.priceTierCode ?? 'RETAIL';
+      const tier = tierMap.get(tierCode);
+      if (!tier) {
+        throw new AppError(ERRORS.PRICE_TIER.INVALID_FOR_TENANT, {
+          details: { code: tierCode },
+        });
+      }
+
+      const expectedPrice = this.priceTiersService.getPriceForTier(
+        product,
+        tierCode,
+      );
+      if (expectedPrice === undefined) {
+        throw new AppError(ERRORS.PRICE_TIER.MISSING_SYSTEM_PRICE, {
+          details: { productId: item.productId, code: tierCode },
+        });
+      }
+
+      const unitPrice = item.unitPrice ?? expectedPrice;
+      if (Math.abs(unitPrice - expectedPrice) > 0.01) {
+        throw new AppError(ERRORS.INVOICE.PRICE_MISMATCH, {
+          details: {
+            productId: item.productId,
+            tierCode,
+            expected: expectedPrice,
+            received: unitPrice,
+          },
+        });
+      }
+
       const lineTotal = this.roundMoney(unitPrice * item.quantity);
 
       resolved.push({
@@ -663,6 +711,8 @@ export class InvoicesService {
         quantity: item.quantity,
         unitPrice,
         lineTotal,
+        priceTierCode: tierCode,
+        priceTierLabel: tier.label,
       });
     }
 
@@ -786,6 +836,8 @@ export class InvoicesService {
       customer_id: invoice.customer_id ?? null,
       subtotal: invoice.subtotal,
       discount: invoice.discount,
+      discount_amount: invoice.discount_amount ?? 0,
+      tax_percent: invoice.tax_percent ?? 0,
       tax: invoice.tax,
       total: invoice.total,
       payment_method: invoice.payment_method,

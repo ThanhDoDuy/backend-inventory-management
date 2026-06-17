@@ -28,6 +28,12 @@ export class Invoice {
   discount: number;
 
   @Prop({ default: 0, min: 0 })
+  discount_amount: number;
+
+  @Prop({ default: 0, min: 0, max: 100 })
+  tax_percent: number;
+
+  @Prop({ default: 0, min: 0 })
   tax: number;
 
   @Prop({ required: true, min: 0 })

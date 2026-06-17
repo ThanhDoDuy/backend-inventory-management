@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { ProductStatus } from '../../shared/constants/business.enums';
 import { AppError, ERRORS } from '../../shared/errors';
+import { PriceTiersService } from '../price-tiers/price-tiers.service';
 import { CategoriesService } from './categories.service';
 import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
 import {
@@ -19,6 +20,7 @@ export class ProductsService {
     @InjectModel(InventoryBalance.name)
     private inventoryBalanceModel: Model<InventoryBalanceDocument>,
     private readonly categoriesService: CategoriesService,
+    private readonly priceTiersService: PriceTiersService,
     private readonly logger: AppLoggerService,
   ) {}
 
@@ -115,12 +117,19 @@ export class ProductsService {
       await this.assertBarcodeAvailable(tenantId, dto.barcode);
     }
 
+    const prices = await this.resolvePricesForWrite(
+      tenantId,
+      dto.selling_price,
+      dto.prices,
+    );
+
     const product = await this.productModel.create({
       tenant_id: new Types.ObjectId(tenantId),
       sku: dto.sku.trim(),
       name: dto.name.trim(),
       cost_price: dto.cost_price,
-      selling_price: dto.selling_price,
+      selling_price: prices.RETAIL,
+      prices,
       minimum_stock: dto.minimum_stock ?? 0,
       image_url: dto.image_url?.trim() ?? '',
       status: ProductStatus.ACTIVE,
@@ -180,9 +189,22 @@ export class ProductsService {
 
     if (dto.name) product.name = dto.name.trim();
     if (dto.cost_price !== undefined) product.cost_price = dto.cost_price;
-    if (dto.selling_price !== undefined) {
+
+    if (dto.prices !== undefined) {
+      const prices = await this.resolvePricesForWrite(
+        tenantId,
+        dto.selling_price ?? product.selling_price,
+        dto.prices,
+      );
+      product.prices = prices;
+      product.selling_price = prices.RETAIL;
+    } else if (dto.selling_price !== undefined) {
+      const prices = this.priceTiersService.resolveProductPrices(product);
+      prices.RETAIL = dto.selling_price;
       product.selling_price = dto.selling_price;
+      product.prices = prices;
     }
+
     if (dto.minimum_stock !== undefined) {
       product.minimum_stock = dto.minimum_stock;
     }
@@ -347,12 +369,37 @@ export class ProductsService {
         : undefined,
       cost_price: product.cost_price,
       selling_price: product.selling_price,
+      prices: this.priceTiersService.resolveProductPrices(product),
       minimum_stock: product.minimum_stock,
       image_url: product.image_url,
       status: product.status,
       stock,
       created_at: product.created_at,
       updated_at: product.updated_at,
-    };
+    }
+  }
+
+  private async resolvePricesForWrite(
+    tenantId: string,
+    sellingPrice: number,
+    pricesInput?: Record<string, number>,
+  ): Promise<Record<string, number>> {
+    const tierMap = await this.priceTiersService.getTierMap(tenantId);
+    const allowedCodes = new Set(tierMap.keys());
+
+    if (pricesInput) {
+      this.priceTiersService.validateProductPricesInput(pricesInput, allowedCodes);
+      return this.priceTiersService.normalizeProductPrices(
+        pricesInput,
+        sellingPrice,
+        allowedCodes,
+      );
+    }
+
+    return this.priceTiersService.normalizeProductPrices(
+      {},
+      sellingPrice,
+      allowedCodes,
+    );
   }
 }

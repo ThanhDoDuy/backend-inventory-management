@@ -26,6 +26,12 @@ export class InvoiceItem {
   @Prop({ required: true, min: 0 })
   total: number;
 
+  @Prop({ default: 'RETAIL' })
+  price_tier_code: string;
+
+  @Prop({ default: '' })
+  price_tier_label: string;
+
   created_at?: Date;
   updated_at?: Date;
 }

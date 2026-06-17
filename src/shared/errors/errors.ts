@@ -314,6 +314,48 @@ export const ERRORS = {
       message: 'Cannot cancel invoice with existing refunds',
       httpStatus: HttpStatus.CONFLICT,
     },
+    PRICE_MISMATCH: {
+      errorCode: 6608,
+      message: 'Unit price does not match product price for selected tier',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+  },
+  PRICE_TIER: {
+    NOT_FOUND: {
+      errorCode: 6700,
+      message: 'Price tier not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    SYSTEM_PROTECTED: {
+      errorCode: 6701,
+      message: 'System price tier cannot be modified this way',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    LIMIT_REACHED: {
+      errorCode: 6702,
+      message: 'Maximum custom price tiers reached',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    CODE_EXISTS: {
+      errorCode: 6703,
+      message: 'Price tier code already exists',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    INVALID_FOR_TENANT: {
+      errorCode: 6704,
+      message: 'Price tier is not active for this store',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    INVALID_AMOUNT: {
+      errorCode: 6705,
+      message: 'Invalid price amount',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    MISSING_SYSTEM_PRICE: {
+      errorCode: 6706,
+      message: 'Missing required system tier price',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
   },
   RBAC: {
     ROLE_NOT_FOUND: {

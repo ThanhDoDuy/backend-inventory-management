@@ -14,6 +14,7 @@ import { UserStatus } from '../../shared/constants/roles.enum';
 import { JwtPayload } from '../../shared/interfaces/jwt-payload.interface';
 import { toObjectIdString } from '../../shared/utils/mongo-id.util';
 import { SettingsService } from '../settings/settings.service';
+import { PriceTiersService } from '../price-tiers/price-tiers.service';
 import { RbacService } from '../rbac/rbac.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { UsersService } from '../users/users.service';
@@ -33,6 +34,7 @@ export class AuthService {
     private usersService: UsersService,
     private tenantsService: TenantsService,
     private settingsService: SettingsService,
+    private priceTiersService: PriceTiersService,
     private rbacService: RbacService,
     private jwtService: JwtService,
     private configService: ConfigService,
@@ -62,6 +64,7 @@ export class AuthService {
 
     await this.rbacService.seedRolesForTenant(tenant._id.toString());
     await this.settingsService.seedForTenant(tenant._id.toString());
+    await this.priceTiersService.seedForTenant(tenant._id.toString());
 
     const owner = await this.usersService.createOwner(
       tenant._id.toString(),

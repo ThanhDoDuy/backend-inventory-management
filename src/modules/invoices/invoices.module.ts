@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CustomersModule } from '../customers/customers.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { PriceTiersModule } from '../price-tiers/price-tiers.module';
 import { ProductsModule } from '../products/products.module';
 import { SettingsModule } from '../settings/settings.module';
 import { Tenant, TenantSchema } from '../tenants/schemas/tenant.schema';
@@ -17,6 +18,7 @@ import { Refund, RefundSchema } from './schemas/refund.schema';
     CustomersModule,
     InventoryModule,
     ProductsModule,
+    PriceTiersModule,
     SettingsModule,
     MongooseModule.forFeature([
       { name: Invoice.name, schema: InvoiceSchema },

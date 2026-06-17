@@ -30,6 +30,9 @@ export class Product {
   @Prop({ required: true, min: 0 })
   selling_price: number;
 
+  @Prop({ type: Object, default: {} })
+  prices: Record<string, number>;
+
   @Prop({ default: 0, min: 0 })
   minimum_stock: number;
 

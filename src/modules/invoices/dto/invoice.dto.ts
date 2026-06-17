@@ -28,6 +28,10 @@ export class CreateInvoiceItemDto {
   @IsNumber()
   @Min(0)
   unitPrice?: number;
+
+  @IsOptional()
+  @IsString()
+  priceTierCode?: string;
 }
 
 export class CreateInvoiceDto {
@@ -46,6 +50,23 @@ export class CreateInvoiceDto {
   @Min(0)
   @Max(100)
   discount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  discountPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  discountAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  taxPercent?: number;
 
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;
