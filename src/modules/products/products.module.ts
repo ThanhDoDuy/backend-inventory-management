@@ -4,6 +4,7 @@ import { PriceTiersModule } from '../price-tiers/price-tiers.module';
 import { CategoriesController } from './categories.controller';
 import { CategoriesService } from './categories.service';
 import { ProductsController } from './products.controller';
+import { ProductsImportService } from './products-import.service';
 import { ProductsService } from './products.service';
 import { Category, CategorySchema } from './schemas/category.schema';
 import {
@@ -22,7 +23,7 @@ import { Product, ProductSchema } from './schemas/product.schema';
     ]),
   ],
   controllers: [CategoriesController, ProductsController],
-  providers: [CategoriesService, ProductsService],
+  providers: [CategoriesService, ProductsService, ProductsImportService],
   exports: [CategoriesService, ProductsService, MongooseModule],
 })
 export class ProductsModule {}

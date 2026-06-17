@@ -4,6 +4,9 @@ import { Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { ProductStatus } from '../../shared/constants/business.enums';
 import { AppError, ERRORS } from '../../shared/errors';
+import { buildCsv, CSV_EXPORT_MAX_ROWS } from '../../shared/utils/csv.util';
+import { buildExcelBuffer } from '../../shared/utils/excel.util';
+import { getProductImportColumnFormats } from '../../shared/constants/import-template-formats';
 import { PriceTiersService } from '../price-tiers/price-tiers.service';
 import { CategoriesService } from './categories.service';
 import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
@@ -401,5 +404,123 @@ export class ProductsService {
       sellingPrice,
       allowedCodes,
     );
+  }
+
+  async exportCsv(
+    tenantId: string,
+    search?: string,
+    categoryId?: string,
+    status?: ProductStatus,
+  ): Promise<string> {
+    const tiers = await this.priceTiersService.list(tenantId, true);
+    const headers = this.getProductCsvHeaders(tiers);
+    const products = await this.findProductsForExport(
+      tenantId,
+      search,
+      categoryId,
+      status,
+    );
+
+    const rows = products.map((product) => {
+      const prices = this.priceTiersService.resolveProductPrices(product);
+      const category = product.populated('category_id')
+        ? (product.category_id as unknown as { name?: string })
+        : null;
+
+      return [
+        product.sku,
+        product.name,
+        product.barcode ?? '',
+        category?.name ?? '',
+        product.cost_price,
+        ...tiers.map((tier) => prices[tier.code] ?? ''),
+        product.minimum_stock,
+        product.status,
+        product.image_url ?? '',
+      ];
+    });
+
+    return buildCsv(headers, rows);
+  }
+
+  async getImportTemplateExcel(tenantId: string): Promise<Buffer> {
+    const { headers, rows } = await this.getImportTemplateData(tenantId);
+    return buildExcelBuffer(headers, rows, {
+      columnFormats: getProductImportColumnFormats(headers),
+    });
+  }
+
+  private async getImportTemplateData(tenantId: string): Promise<{
+    headers: string[];
+    rows: unknown[][];
+  }> {
+    const tiers = await this.priceTiersService.list(tenantId, true);
+    const headers = this.getProductCsvHeaders(tiers);
+    const sampleRow = [
+      'SKU001',
+      'Pepsi 330ml',
+      '8934567890123',
+      'Nước ngọt',
+      8000,
+      ...tiers.map((tier, index) => {
+        if (tier.code === 'RETAIL') return 15000;
+        if (tier.code === 'WHOLESALE') return 12000;
+        if (tier.code === 'VIP') return 13500;
+        return 14000 + index * 100;
+      }),
+      10,
+      'ACTIVE',
+      '',
+    ];
+
+    return { headers, rows: [sampleRow] };
+  }
+
+  private getProductCsvHeaders(
+    tiers: Array<{ code: string }>,
+  ): string[] {
+    return [
+      'sku',
+      'name',
+      'barcode',
+      'category_name',
+      'cost_price',
+      ...tiers.map((tier) => `price_${tier.code.toLowerCase()}`),
+      'minimum_stock',
+      'status',
+      'image_url',
+    ];
+  }
+
+  private async findProductsForExport(
+    tenantId: string,
+    search?: string,
+    categoryId?: string,
+    status?: ProductStatus,
+  ): Promise<ProductDocument[]> {
+    const filter: Record<string, unknown> = {
+      tenant_id: new Types.ObjectId(tenantId),
+      is_deleted: false,
+    };
+
+    if (categoryId) {
+      filter.category_id = new Types.ObjectId(categoryId);
+    }
+    if (status) {
+      filter.status = status;
+    }
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { sku: { $regex: search, $options: 'i' } },
+        { barcode: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    return this.productModel
+      .find(filter)
+      .populate('category_id', 'name')
+      .sort({ sku: 1 })
+      .limit(CSV_EXPORT_MAX_ROWS);
   }
 }

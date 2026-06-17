@@ -38,6 +38,52 @@ export class CategoriesService {
     return category;
   }
 
+  async findByNameInTenant(
+    tenantId: string,
+    name: string,
+  ): Promise<CategoryDocument | null> {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    return this.categoryModel.findOne({
+      tenant_id: new Types.ObjectId(tenantId),
+      is_deleted: false,
+      name: { $regex: new RegExp(`^${this.escapeRegex(trimmed)}$`, 'i') },
+    });
+  }
+
+  async findOrCreateForImport(
+    tenantId: string,
+    name: string,
+    description: string,
+  ): Promise<CategoryDocument> {
+    const trimmed = name.trim();
+    const existing = await this.findByNameInTenant(tenantId, trimmed);
+    if (existing) {
+      return existing;
+    }
+
+    try {
+      return await this.categoryModel.create({
+        tenant_id: new Types.ObjectId(tenantId),
+        name: trimmed,
+        description,
+      });
+    } catch {
+      const again = await this.findByNameInTenant(tenantId, trimmed);
+      if (again) {
+        return again;
+      }
+      throw new AppError(ERRORS.CATEGORY.NAME_EXISTS);
+    }
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
   async list(
     tenantId: string,
     page = 1,

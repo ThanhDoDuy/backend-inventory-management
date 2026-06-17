@@ -4,6 +4,9 @@ import { Connection, Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { PartyStatus } from '../../shared/constants/business.enums';
 import { AppError, ERRORS } from '../../shared/errors';
+import { buildCsv, CSV_EXPORT_MAX_ROWS } from '../../shared/utils/csv.util';
+import { buildExcelBuffer } from '../../shared/utils/excel.util';
+import { SUPPLIER_IMPORT_COLUMN_FORMATS } from '../../shared/constants/import-template-formats';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/supplier.dto';
 import { Supplier, SupplierDocument } from './schemas/supplier.schema';
 
@@ -166,6 +169,27 @@ export class SuppliersService {
     return supplier;
   }
 
+  async activate(
+    tenantId: string,
+    userId: string,
+    id: string,
+  ): Promise<SupplierDocument> {
+    this.logger.step('SuppliersService.activate', { tenantId, id });
+
+    const supplier = await this.findByIdInTenant(tenantId, id);
+    if (!supplier) {
+      throw new AppError(ERRORS.SUPPLIER.NOT_FOUND);
+    }
+    if (supplier.status === PartyStatus.ACTIVE) {
+      return supplier;
+    }
+
+    supplier.status = PartyStatus.ACTIVE;
+    supplier.modified_by = new Types.ObjectId(userId);
+    await supplier.save();
+    return supplier;
+  }
+
   async softDelete(
     tenantId: string,
     userId: string,
@@ -292,5 +316,77 @@ export class SuppliersService {
     } catch {
       return EMPTY_SUPPLIER_HISTORY;
     }
+  }
+
+  private static readonly SUPPLIER_CSV_HEADERS = [
+    'name',
+    'phone',
+    'email',
+    'address',
+    'tax_code',
+    'status',
+  ] as const;
+
+  async exportCsv(
+    tenantId: string,
+    search?: string,
+    status?: PartyStatus,
+  ): Promise<string> {
+    const suppliers = await this.findSuppliersForExport(tenantId, search, status);
+    const rows = suppliers.map((supplier) => [
+      supplier.name,
+      supplier.phone,
+      supplier.email ?? '',
+      supplier.address ?? '',
+      supplier.tax_code ?? '',
+      supplier.status,
+    ]);
+
+    return buildCsv([...SuppliersService.SUPPLIER_CSV_HEADERS], rows);
+  }
+
+  async getImportTemplateExcel(): Promise<Buffer> {
+    return buildExcelBuffer(
+      [...SuppliersService.SUPPLIER_CSV_HEADERS],
+      [
+        [
+          'Công ty TNHH ABC',
+          '0901234567',
+          'contact@abc.vn',
+          '123 Nguyễn Huệ, Q1, TP.HCM',
+          '0123456789',
+          'ACTIVE',
+        ],
+      ],
+      { columnFormats: SUPPLIER_IMPORT_COLUMN_FORMATS },
+    );
+  }
+
+  private async findSuppliersForExport(
+    tenantId: string,
+    search?: string,
+    status?: PartyStatus,
+  ): Promise<SupplierDocument[]> {
+    const filter: Record<string, unknown> = {
+      tenant_id: new Types.ObjectId(tenantId),
+      is_deleted: false,
+    };
+
+    if (status) {
+      filter.status = status;
+    }
+
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    return this.supplierModel
+      .find(filter)
+      .sort({ name: 1 })
+      .limit(CSV_EXPORT_MAX_ROWS);
   }
 }

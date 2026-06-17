@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Supplier, SupplierSchema } from './schemas/supplier.schema';
 import { SuppliersController } from './suppliers.controller';
+import { SuppliersImportService } from './suppliers-import.service';
 import { SuppliersService } from './suppliers.service';
 
 @Module({
@@ -11,7 +12,7 @@ import { SuppliersService } from './suppliers.service';
     ]),
   ],
   controllers: [SuppliersController],
-  providers: [SuppliersService],
+  providers: [SuppliersService, SuppliersImportService],
   exports: [SuppliersService, MongooseModule],
 })
 export class SuppliersModule {}

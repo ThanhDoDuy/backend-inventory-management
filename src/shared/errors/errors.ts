@@ -413,6 +413,33 @@ export const ERRORS = {
       httpStatus: HttpStatus.BAD_REQUEST,
     },
   },
+  IMPORT: {
+    EMPTY_FILE: {
+      errorCode: 6800,
+      message: 'Import file is empty',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    INVALID_FORMAT: {
+      errorCode: 6801,
+      message: 'Invalid CSV format or headers',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    PREVIEW_EXPIRED: {
+      errorCode: 6802,
+      message: 'Import preview expired, please upload again',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    ROW_LIMIT_EXCEEDED: {
+      errorCode: 6803,
+      message: 'Import row limit exceeded',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    INVALID_FILE_TYPE: {
+      errorCode: 6804,
+      message: 'Only CSV (.csv) and Excel (.xlsx) files are supported',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+  },
   NOTIFICATION: {
     NOT_FOUND: {
       errorCode: 7200,
