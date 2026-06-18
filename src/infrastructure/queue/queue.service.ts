@@ -13,6 +13,7 @@ import {
   AuditJobPayload,
   DomainEventPayload,
   NOTIFICATION_QUEUE,
+  WORKER_DRAIN_DELAY_SECONDS,
 } from './queue.constants';
 
 @Injectable()
@@ -36,6 +37,11 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     this.auditQueue = new Queue(AUDIT_QUEUE, { connection });
     this.notificationQueue = new Queue(NOTIFICATION_QUEUE, { connection });
 
+    const workerOptions = {
+      connection,
+      drainDelay: WORKER_DRAIN_DELAY_SECONDS,
+    };
+
     this.auditWorker = new Worker(
       AUDIT_QUEUE,
       async (job) => {
@@ -43,7 +49,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
           job.data as AuditJobPayload,
         );
       },
-      { connection },
+      workerOptions,
     );
 
     this.notificationWorker = new Worker(
@@ -53,7 +59,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
           job.data as DomainEventPayload,
         );
       },
-      { connection },
+      workerOptions,
     );
 
     this.auditWorker.on('failed', (job, error) => {

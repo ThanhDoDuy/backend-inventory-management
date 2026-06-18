@@ -1,6 +1,9 @@
 export const AUDIT_QUEUE = 'audit-queue';
 export const NOTIFICATION_QUEUE = 'notification-queue';
 
+/** Long-poll interval when queue is empty (seconds). Default BullMQ is 5s. */
+export const WORKER_DRAIN_DELAY_SECONDS = 30 * 60;
+
 export const DOMAIN_EVENTS = {
   INVENTORY_LOW_STOCK: 'inventory.low_stock.v1',
   PO_RECEIVED: 'po.received.v1',
