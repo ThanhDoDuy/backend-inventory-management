@@ -4,6 +4,9 @@ export const NOTIFICATION_QUEUE = 'notification-queue';
 /** Long-poll interval when queue is empty (seconds). Default BullMQ is 5s. */
 export const WORKER_DRAIN_DELAY_SECONDS = 30 * 60;
 
+/** Stalled job check interval (ms). Default BullMQ is 30_000 (30s). */
+export const WORKER_STALLED_INTERVAL_MS = 30 * 60 * 1000;
+
 export const DOMAIN_EVENTS = {
   INVENTORY_LOW_STOCK: 'inventory.low_stock.v1',
   PO_RECEIVED: 'po.received.v1',

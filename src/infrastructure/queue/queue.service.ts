@@ -14,6 +14,7 @@ import {
   DomainEventPayload,
   NOTIFICATION_QUEUE,
   WORKER_DRAIN_DELAY_SECONDS,
+  WORKER_STALLED_INTERVAL_MS,
 } from './queue.constants';
 
 @Injectable()
@@ -40,6 +41,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     const workerOptions = {
       connection,
       drainDelay: WORKER_DRAIN_DELAY_SECONDS,
+      stalledInterval: WORKER_STALLED_INTERVAL_MS,
     };
 
     this.auditWorker = new Worker(
