@@ -60,6 +60,16 @@ export const ERRORS = {
       message: 'New password must differ from old password',
       httpStatus: HttpStatus.CONFLICT,
     },
+    PASSWORD_RESET_RATE_LIMITED: {
+      errorCode: 2009,
+      message: 'Too many password reset requests. Please try again later.',
+      httpStatus: HttpStatus.TOO_MANY_REQUESTS,
+    },
+    EMAIL_SEND_FAILED: {
+      errorCode: 2010,
+      message: 'Unable to send password reset email. Please try again later.',
+      httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+    },
     TENANT_CONTEXT_REQUIRED: {
       errorCode: 2100,
       message: 'Tenant context required',
@@ -111,6 +121,11 @@ export const ERRORS = {
       errorCode: 3007,
       message:
         'Cannot change role: this is the only admin in the tenant. Assign another admin first.',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    OWNER_ROLE_IMMUTABLE: {
+      errorCode: 3008,
+      message: 'Cannot change role of the store owner account',
       httpStatus: HttpStatus.CONFLICT,
     },
   },

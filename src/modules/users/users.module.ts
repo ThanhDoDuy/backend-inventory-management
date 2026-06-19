@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { TenantsModule } from '../tenants/tenants.module';
 import { User, UserSchema } from './schemas/user.schema';
 import { RefreshToken, RefreshTokenSchema } from './schemas/refresh-token.schema';
 import { UsersService } from './users.service';
@@ -11,6 +12,7 @@ import { UsersController } from './users.controller';
       { name: User.name, schema: UserSchema },
       { name: RefreshToken.name, schema: RefreshTokenSchema },
     ]),
+    TenantsModule,
   ],
   controllers: [UsersController],
   providers: [UsersService],

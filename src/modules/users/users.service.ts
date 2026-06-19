@@ -8,6 +8,7 @@ import { AppError, ERRORS } from '../../shared/errors';
 import { Role as RoleCode } from '../../shared/constants/roles.enum';
 import { UserStatus } from '../../shared/constants/roles.enum';
 import { RbacService } from '../rbac/rbac.service';
+import { TenantsService } from '../tenants/tenants.service';
 import { User, UserDocument } from './schemas/user.schema';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 
@@ -17,6 +18,7 @@ export class UsersService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private configService: ConfigService,
     private readonly rbacService: RbacService,
+    private readonly tenantsService: TenantsService,
     private readonly logger: AppLoggerService,
   ) {}
 
@@ -163,6 +165,7 @@ export class UsersService {
     }
 
     const skip = (page - 1) * limit;
+    const ownerUserId = await this.getTenantOwnerUserId(tenantId);
     const [items, total] = await Promise.all([
       this.userModel
         .find(filter)
@@ -175,7 +178,7 @@ export class UsersService {
     ]);
 
     return {
-      items: items.map((user) => this.toProfile(user)),
+      items: items.map((user) => this.toProfile(user, ownerUserId)),
       total,
       page,
       limit,
@@ -196,6 +199,12 @@ export class UsersService {
     if (dto.username) user.username = dto.username;
     if (dto.role_id) {
       await this.rbacService.assertRoleInTenant(tenantId, dto.role_id);
+      await this.assertOwnerRoleImmutable(
+        tenantId,
+        id,
+        user.role_id,
+        dto.role_id,
+      );
       await this.assertCanDemoteLastAdmin(tenantId, user.role_id, dto.role_id);
       user.role_id = new Types.ObjectId(dto.role_id);
     }
@@ -226,6 +235,12 @@ export class UsersService {
       throw new AppError(ERRORS.USER.SAME_ROLE);
     }
 
+    await this.assertOwnerRoleImmutable(
+      tenantId,
+      id,
+      user.role_id,
+      roleId,
+    );
     await this.assertCanDemoteLastAdmin(tenantId, user.role_id, roleId);
 
     user.role_id = new Types.ObjectId(roleId);
@@ -303,6 +318,27 @@ export class UsersService {
     await user.save();
   }
 
+  private async getTenantOwnerUserId(tenantId: string): Promise<string | null> {
+    const tenant = await this.tenantsService.findById(tenantId);
+    return tenant?.owner_user_id?.toString() ?? null;
+  }
+
+  private async assertOwnerRoleImmutable(
+    tenantId: string,
+    userId: string,
+    currentRoleId: Types.ObjectId,
+    newRoleId: string,
+  ): Promise<void> {
+    if (currentRoleId.toString() === newRoleId) {
+      return;
+    }
+
+    const ownerUserId = await this.getTenantOwnerUserId(tenantId);
+    if (ownerUserId && ownerUserId === userId) {
+      throw new AppError(ERRORS.USER.OWNER_ROLE_IMMUTABLE);
+    }
+  }
+
   private async assertCanDemoteLastAdmin(
     tenantId: string,
     currentRoleId: Types.ObjectId,
@@ -333,10 +369,17 @@ export class UsersService {
     }
   }
 
-  toProfile(user: UserDocument) {
+  async toProfileForTenant(tenantId: string, user: UserDocument) {
+    const ownerUserId = await this.getTenantOwnerUserId(tenantId);
+    return this.toProfile(user, ownerUserId);
+  }
+
+  toProfile(user: UserDocument, ownerUserId?: string | null) {
     const populatedRole = user.populated('role_id')
       ? (user.role_id as unknown as { _id: Types.ObjectId; code: string; name: string })
       : null;
+
+    const userId = user._id.toString();
 
     return {
       id: user._id,
@@ -353,6 +396,7 @@ export class UsersService {
         : undefined,
       status: user.status,
       last_login_at: user.last_login_at,
+      is_owner: ownerUserId ? userId === ownerUserId : false,
     };
   }
 }

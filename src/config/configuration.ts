@@ -18,4 +18,15 @@ export default () => ({
     format: process.env.LOG_FORMAT!,
     slowMs: parseInt(process.env.LOG_SLOW_MS!, 10),
   },
+  email: {
+    resendApiKey: process.env.RESEND_API_KEY,
+    from: process.env.EMAIL_FROM,
+  },
+  frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3001',
+  passwordReset: {
+    expiresMinutes: parseInt(
+      process.env.PASSWORD_RESET_EXPIRES_MINUTES ?? '15',
+      10,
+    ),
+  },
 });

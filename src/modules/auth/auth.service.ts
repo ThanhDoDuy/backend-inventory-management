@@ -4,7 +4,8 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
+import { EmailService } from '../../infrastructure/email/email.service';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { AppError, ERRORS } from '../../shared/errors';
 import { RedisService } from '../../infrastructure/redis/redis.service';
@@ -24,12 +25,22 @@ import {
 } from '../users/schemas/refresh-token.schema';
 import {
   ChangePasswordDto,
+  ForgotPasswordDto,
   LoginDto,
   RegisterDto,
+  ResetPasswordDto,
 } from './dto/auth.dto';
+import {
+  PasswordResetToken,
+  PasswordResetTokenDocument,
+} from './schemas/password-reset-token.schema';
+import { PasswordResetRateLimiterService } from './password-reset-rate-limiter.service';
 
 @Injectable()
 export class AuthService {
+  private readonly forgotPasswordMessage =
+    'If an account with that email exists, a password reset link has been sent.';
+
   constructor(
     private usersService: UsersService,
     private tenantsService: TenantsService,
@@ -40,8 +51,12 @@ export class AuthService {
     private configService: ConfigService,
     private redisService: RedisService,
     private auditService: AuditService,
+    private emailService: EmailService,
+    private passwordResetRateLimiter: PasswordResetRateLimiterService,
     @InjectModel(RefreshToken.name)
     private refreshTokenModel: Model<RefreshTokenDocument>,
+    @InjectModel(PasswordResetToken.name)
+    private passwordResetTokenModel: Model<PasswordResetTokenDocument>,
     private readonly logger: AppLoggerService,
   ) {}
 
@@ -239,6 +254,109 @@ export class AuthService {
     });
 
     return { message: 'Password changed successfully' };
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    this.logger.step('AuthService.forgotPassword', { email: dto.email });
+
+    await this.passwordResetRateLimiter.assertCanRequest(dto.email);
+    await this.passwordResetRateLimiter.recordRequest(dto.email);
+
+    const user = await this.usersService.findByEmail(dto.email);
+    if (!user || user.status !== UserStatus.ACTIVE) {
+      return { message: this.forgotPasswordMessage };
+    }
+
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    const expiresMinutes =
+      this.configService.get<number>('passwordReset.expiresMinutes') ?? 15;
+
+    await this.passwordResetTokenModel.updateMany(
+      { user_id: user._id, is_deleted: false },
+      { is_deleted: true },
+    );
+
+    await this.passwordResetTokenModel.create({
+      user_id: user._id,
+      token_hash: tokenHash,
+      expired_at: new Date(Date.now() + expiresMinutes * 60 * 1000),
+    });
+
+    const frontendUrl =
+      this.configService.get<string>('frontendUrl') ?? 'http://localhost:3001';
+    const resetUrl = `${frontendUrl.replace(/\/+$/, '')}/reset-password?token=${encodeURIComponent(rawToken)}`;
+
+    try {
+      await this.emailService.sendPasswordReset(user.email, {
+        username: user.username,
+        resetUrl,
+        expiresMinutes,
+      });
+    } catch {
+      throw new AppError(ERRORS.AUTH.EMAIL_SEND_FAILED);
+    }
+
+    this.auditService.emit({
+      tenantId: user.tenant_id.toString(),
+      userId: user._id.toString(),
+      action: AUDIT_ACTIONS.PASSWORD_RESET_REQUESTED,
+      module: AUDIT_MODULES.AUTH,
+    });
+
+    return { message: this.forgotPasswordMessage };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    this.logger.step('AuthService.resetPassword', {});
+
+    const tokenHash = createHash('sha256').update(dto.token).digest('hex');
+    const stored = await this.passwordResetTokenModel.findOne({
+      token_hash: tokenHash,
+      is_deleted: false,
+      used_at: { $exists: false },
+      expired_at: { $gt: new Date() },
+    });
+    if (!stored) {
+      throw new AppError(ERRORS.AUTH.INVALID_TOKEN);
+    }
+
+    const user = await this.usersService.findById(stored.user_id.toString());
+    if (!user || user.status !== UserStatus.ACTIVE) {
+      throw new AppError(ERRORS.AUTH.INVALID_TOKEN);
+    }
+
+    user.password_hash = await bcrypt.hash(dto.new_password, 10);
+    await user.save();
+
+    stored.used_at = new Date();
+    stored.is_deleted = true;
+    await stored.save();
+
+    await this.revokeUserSessions(
+      user._id.toString(),
+      user.tenant_id.toString(),
+    );
+
+    this.auditService.emit({
+      tenantId: user.tenant_id.toString(),
+      userId: user._id.toString(),
+      action: AUDIT_ACTIONS.PASSWORD_RESET_COMPLETED,
+      module: AUDIT_MODULES.AUTH,
+    });
+
+    return { message: 'Password reset successfully' };
+  }
+
+  private async revokeUserSessions(userId: string, tenantId: string) {
+    await this.refreshTokenModel.updateMany(
+      { user_id: new Types.ObjectId(userId), is_deleted: false },
+      { is_deleted: true },
+    );
+
+    await this.redisService.del(
+      this.redisService.tenantKey(tenantId, 'refresh_token', userId),
+    );
   }
 
   private async issueTokens(user: {

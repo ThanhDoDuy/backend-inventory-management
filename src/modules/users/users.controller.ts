@@ -50,14 +50,16 @@ export class UsersController {
   @RequirePermission(PERMISSIONS.USERS.VIEW)
   async getOne(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     const found = await this.usersService.findByIdInTenant(user.tenantId, id);
-    return found ? this.usersService.toProfile(found) : null;
+    return found
+      ? this.usersService.toProfileForTenant(user.tenantId, found)
+      : null;
   }
 
   @Post()
   @RequirePermission(PERMISSIONS.USERS.CREATE)
   async create(@CurrentUser() user: RequestUser, @Body() dto: CreateUserDto) {
     const created = await this.usersService.create(user.tenantId, dto);
-    return this.usersService.toProfile(created);
+    return this.usersService.toProfileForTenant(user.tenantId, created);
   }
 
   @Patch(':id')
@@ -68,7 +70,7 @@ export class UsersController {
     @Body() dto: UpdateUserDto,
   ) {
     const updated = await this.usersService.update(user.tenantId, id, dto);
-    return this.usersService.toProfile(updated);
+    return this.usersService.toProfileForTenant(user.tenantId, updated);
   }
 
   @Patch(':id/assign-role')
@@ -83,7 +85,7 @@ export class UsersController {
       id,
       dto.role_id,
     );
-    return this.usersService.toProfile(updated);
+    return this.usersService.toProfileForTenant(user.tenantId, updated);
   }
 
   @Patch(':id/disable')
@@ -94,7 +96,7 @@ export class UsersController {
     @Body() _dto: DisableUserDto,
   ) {
     const updated = await this.usersService.disable(user.tenantId, id);
-    return this.usersService.toProfile(updated);
+    return this.usersService.toProfileForTenant(user.tenantId, updated);
   }
 
   @Patch(':id/activate')
@@ -105,7 +107,7 @@ export class UsersController {
     @Body() _dto: ActivateUserDto,
   ) {
     const updated = await this.usersService.activate(user.tenantId, id);
-    return this.usersService.toProfile(updated);
+    return this.usersService.toProfileForTenant(user.tenantId, updated);
   }
 
   @Post(':id/reset-password')

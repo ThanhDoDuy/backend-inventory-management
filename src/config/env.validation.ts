@@ -18,6 +18,10 @@ export const envValidationSchema = Joi.object({
     .required(),
   LOG_FORMAT: Joi.string().valid('pretty', 'json').required(),
   LOG_SLOW_MS: Joi.number().integer().min(0).required(),
+  RESEND_API_KEY: Joi.string().optional().allow(''),
+  EMAIL_FROM: Joi.string().optional().allow(''),
+  FRONTEND_URL: Joi.string().uri().optional(),
+  PASSWORD_RESET_EXPIRES_MINUTES: Joi.number().integer().min(1).max(60).default(15),
   CORS_ORIGIN: Joi.string()
     .optional()
     .allow('')

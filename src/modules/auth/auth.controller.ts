@@ -11,9 +11,11 @@ import { CurrentUser } from '../../shared/decorators/current-user.decorator';
 import type { RequestUser } from '../../shared/interfaces/request-user.interface';
 import {
   ChangePasswordDto,
+  ForgotPasswordDto,
   LoginDto,
   RefreshTokenDto,
   RegisterDto,
+  ResetPasswordDto,
 } from './dto/auth.dto';
 import { AuthService } from './auth.service';
 
@@ -37,6 +39,18 @@ export class AuthController {
   @Post('refresh-token')
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto.refresh_token);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Public()
+  @Post('reset-password')
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 
   @Post('logout')
