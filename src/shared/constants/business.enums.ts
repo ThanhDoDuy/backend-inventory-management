@@ -13,6 +13,12 @@ export enum PartyStatus {
   DISABLED = 'DISABLED',
 }
 
+export enum CustomerType {
+  INDIVIDUAL = 'INDIVIDUAL',
+  COMPANY = 'COMPANY',
+  GROUP = 'GROUP',
+}
+
 export enum InvoiceStatus {
   DRAFT = 'DRAFT',
   PAID = 'PAID',

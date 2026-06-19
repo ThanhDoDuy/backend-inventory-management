@@ -230,6 +230,26 @@ export const ERRORS = {
       message: 'Cannot delete customer with existing invoices',
       httpStatus: HttpStatus.CONFLICT,
     },
+    TAX_CODE_REQUIRED: {
+      errorCode: 6404,
+      message: 'Tax code is required for company customers',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    INVALID_TAX_CODE: {
+      errorCode: 6405,
+      message: 'Tax code must be 10 or 13 digits',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    TAX_CODE_NOT_ALLOWED: {
+      errorCode: 6406,
+      message: 'Tax code is only allowed for company customers',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    TAX_CODE_IN_USE: {
+      errorCode: 6407,
+      message: 'Tax code already in use for this store',
+      httpStatus: HttpStatus.CONFLICT,
+    },
   },
   PO: {
     NOT_FOUND: {

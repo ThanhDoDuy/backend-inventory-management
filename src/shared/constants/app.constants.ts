@@ -48,6 +48,18 @@ export const APP = {
         'status',
       ],
     },
+    customer: {
+      headers: [
+        'customer_type',
+        'name',
+        'phone',
+        'email',
+        'address',
+        'tax_code',
+        'contact_person',
+        'status',
+      ],
+    },
     po: {
       headers: [
         'po_group',
@@ -115,6 +127,8 @@ export type NotificationType =
 export type ProductImportMode = 'create_only' | 'upsert';
 
 export type SupplierImportMode = 'create_only' | 'upsert';
+
+export type CustomerImportMode = 'create_only' | 'upsert';
 
 export type SystemPriceTierCode = (typeof APP.priceTier.systemCodes)[number];
 

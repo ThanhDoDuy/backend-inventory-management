@@ -5,9 +5,15 @@ import {
   IsString,
   MinLength,
 } from 'class-validator';
-import { PartyStatus } from '../../../shared/constants/business.enums';
+import {
+  CustomerType,
+  PartyStatus,
+} from '../../../shared/constants/business.enums';
 
 export class CreateCustomerDto {
+  @IsEnum(CustomerType)
+  customer_type: CustomerType;
+
   @IsString()
   @MinLength(1)
   name: string;
@@ -23,9 +29,21 @@ export class CreateCustomerDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  @IsOptional()
+  @IsString()
+  tax_code?: string;
+
+  @IsOptional()
+  @IsString()
+  contact_person?: string;
 }
 
 export class UpdateCustomerDto {
+  @IsOptional()
+  @IsEnum(CustomerType)
+  customer_type?: CustomerType;
+
   @IsOptional()
   @IsString()
   @MinLength(1)
@@ -43,6 +61,14 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  @IsOptional()
+  @IsString()
+  tax_code?: string;
+
+  @IsOptional()
+  @IsString()
+  contact_person?: string;
 }
 
 export class DisableCustomerDto {
@@ -59,4 +85,8 @@ export class ListCustomersQueryDto {
   @IsOptional()
   @IsEnum(PartyStatus)
   status?: PartyStatus;
+
+  @IsOptional()
+  @IsEnum(CustomerType)
+  customer_type?: CustomerType;
 }

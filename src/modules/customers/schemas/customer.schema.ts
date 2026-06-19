@@ -1,6 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { PartyStatus } from '../../../shared/constants/business.enums';
+import {
+  CustomerType,
+  PartyStatus,
+} from '../../../shared/constants/business.enums';
 
 export type CustomerDocument = HydratedDocument<Customer>;
 
@@ -8,6 +11,9 @@ export type CustomerDocument = HydratedDocument<Customer>;
 export class Customer {
   @Prop({ type: Types.ObjectId, required: true, index: true })
   tenant_id: Types.ObjectId;
+
+  @Prop({ enum: CustomerType, default: CustomerType.INDIVIDUAL, required: true })
+  customer_type: CustomerType;
 
   @Prop({ required: true })
   name: string;
@@ -20,6 +26,12 @@ export class Customer {
 
   @Prop({ default: null })
   address?: string;
+
+  @Prop({ default: null })
+  tax_code?: string;
+
+  @Prop({ default: null })
+  contact_person?: string;
 
   @Prop({ enum: PartyStatus, default: PartyStatus.ACTIVE })
   status: PartyStatus;
@@ -51,4 +63,9 @@ CustomerSchema.index(
   { tenant_id: 1, email: 1 },
   { unique: true, sparse: true },
 );
+CustomerSchema.index(
+  { tenant_id: 1, tax_code: 1 },
+  { unique: true, sparse: true },
+);
+CustomerSchema.index({ tenant_id: 1, customer_type: 1 });
 CustomerSchema.index({ tenant_id: 1, name: 1 });

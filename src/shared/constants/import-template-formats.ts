@@ -1,5 +1,16 @@
 import type { ExcelColumnFormat } from '../utils/excel.util';
 
+export const CUSTOMER_IMPORT_COLUMN_FORMATS: Record<string, ExcelColumnFormat> = {
+  customer_type: 'text',
+  name: 'text',
+  phone: 'text',
+  email: 'text',
+  address: 'text',
+  tax_code: 'text',
+  contact_person: 'text',
+  status: 'text',
+};
+
 export const SUPPLIER_IMPORT_COLUMN_FORMATS: Record<string, ExcelColumnFormat> = {
   name: 'text',
   phone: 'text',
