@@ -7,7 +7,9 @@ import { APP } from '../../shared/constants/app.constants';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS, AUDIT_MODULES } from '../audit/constants/audit.constants';
 import {
+  CustomerType,
   InvoiceStatus,
+  PartyStatus,
   PaymentMethod,
   PaymentStatus,
   ProductStatus,
@@ -101,6 +103,15 @@ export class InvoicesService {
       );
       if (!customer) {
         throw new AppError(ERRORS.INVOICE.CUSTOMER_NOT_FOUND);
+      }
+      if (customer.status === PartyStatus.DISABLED) {
+        throw new AppError(ERRORS.INVOICE.CUSTOMER_DISABLED);
+      }
+      if (
+        customer.customer_type !== CustomerType.COMPANY &&
+        customer.customer_type !== CustomerType.GROUP
+      ) {
+        throw new AppError(ERRORS.INVOICE.CUSTOMER_TYPE_NOT_ALLOWED);
       }
     }
 

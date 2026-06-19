@@ -314,6 +314,16 @@ export const ERRORS = {
       message: 'Customer not found',
       httpStatus: HttpStatus.NOT_FOUND,
     },
+    CUSTOMER_DISABLED: {
+      errorCode: 6608,
+      message: 'Customer is disabled',
+      httpStatus: HttpStatus.CONFLICT,
+    },
+    CUSTOMER_TYPE_NOT_ALLOWED: {
+      errorCode: 6609,
+      message: 'Only company or group customers can be linked to this invoice',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
     DISCOUNT_EXCEEDED: {
       errorCode: 6604,
       message: 'Discount exceeds allowed limit for your role',
