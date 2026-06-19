@@ -9,11 +9,14 @@ import { AUDIT_ACTIONS, AUDIT_MODULES } from '../audit/constants/audit.constants
 import { PoStatus } from '../../shared/constants/business.enums';
 import { APP } from '../../shared/constants/app.constants';
 import { AppError, ERRORS } from '../../shared/errors';
+import { buildCsv } from '../../shared/utils/csv.util';
 import { acquireLockWithRetry } from '../../shared/utils/redis-lock.util';
 import { InventoryReferenceType } from '../inventory/constants/inventory.enums';
 import { InventoryService } from '../inventory/inventory.service';
 import { ProductsService } from '../products/products.service';
+import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { SuppliersService } from '../suppliers/suppliers.service';
+import { Supplier, SupplierDocument } from '../suppliers/schemas/supplier.schema';
 import {
   CancelPurchaseOrderDto,
   CreatePurchaseOrderDto,
@@ -63,6 +66,41 @@ export interface ListPurchaseOrdersResult {
   limit: number;
 }
 
+type PurchaseOrderExportType = 'summary' | 'detail';
+
+interface PurchaseOrderListFilters {
+  status?: PoStatus;
+  supplierId?: string;
+  from?: string;
+  to?: string;
+}
+
+const PO_SUMMARY_CSV_HEADERS = [
+  'po_number',
+  'supplier_name',
+  'supplier_phone',
+  'status',
+  'total_amount',
+  'expected_date',
+  'cancel_reason',
+  'created_at',
+  'updated_at',
+] as const;
+
+const PO_DETAIL_CSV_HEADERS = [
+  'po_number',
+  'supplier_name',
+  'status',
+  'product_sku',
+  'product_name',
+  'quantity',
+  'received_quantity',
+  'remaining_quantity',
+  'cost_price',
+  'line_total',
+  'created_at',
+] as const;
+
 @Injectable()
 export class PurchaseOrdersService {
   constructor(
@@ -72,6 +110,10 @@ export class PurchaseOrdersService {
     private purchaseOrderItemModel: Model<PurchaseOrderItemDocument>,
     @InjectModel(GoodsReceipt.name)
     private goodsReceiptModel: Model<GoodsReceiptDocument>,
+    @InjectModel(Supplier.name)
+    private supplierModel: Model<SupplierDocument>,
+    @InjectModel(Product.name)
+    private productModel: Model<ProductDocument>,
     @InjectConnection() private connection: Connection,
     private suppliersService: SuppliersService,
     private productsService: ProductsService,
@@ -454,6 +496,8 @@ export class PurchaseOrdersService {
     limit = 20,
     status?: PoStatus,
     supplierId?: string,
+    from?: string,
+    to?: string,
   ): Promise<ListPurchaseOrdersResult> {
     this.logger.step('PurchaseOrdersService.list', {
       tenantId,
@@ -461,19 +505,11 @@ export class PurchaseOrdersService {
       limit,
       status,
       supplierId,
+      from,
+      to,
     });
 
-    const filter: Record<string, unknown> = {
-      tenant_id: new Types.ObjectId(tenantId),
-      is_deleted: false,
-    };
-
-    if (status) {
-      filter.status = status;
-    }
-    if (supplierId) {
-      filter.supplier_id = new Types.ObjectId(supplierId);
-    }
+    const filter = this.buildListFilter(tenantId, { status, supplierId, from, to });
 
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
@@ -491,6 +527,31 @@ export class PurchaseOrdersService {
       page,
       limit,
     };
+  }
+
+  async exportCsv(
+    tenantId: string,
+    filters: PurchaseOrderListFilters,
+    exportType: PurchaseOrderExportType = 'summary',
+  ): Promise<string> {
+    this.logger.step('PurchaseOrdersService.exportCsv', {
+      tenantId,
+      exportType,
+      ...filters,
+    });
+
+    const filter = this.buildListFilter(tenantId, filters);
+    const orders = await this.purchaseOrderModel
+      .find(filter)
+      .sort({ created_at: -1, _id: -1 })
+      .limit(APP.csv.exportMaxRows)
+      .lean();
+
+    if (exportType === 'detail') {
+      return this.buildPurchaseOrderDetailCsv(tenantId, orders);
+    }
+
+    return this.buildPurchaseOrderSummaryCsv(tenantId, orders);
   }
 
   async getById(tenantId: string, id: string): Promise<PurchaseOrderView> {
@@ -633,5 +694,180 @@ export class PurchaseOrdersService {
       cost_price: item.cost_price,
       remaining_quantity: item.quantity - item.received_quantity,
     };
+  }
+
+  private buildListFilter(
+    tenantId: string,
+    filters: PurchaseOrderListFilters,
+  ): Record<string, unknown> {
+    const filter: Record<string, unknown> = {
+      tenant_id: new Types.ObjectId(tenantId),
+      is_deleted: false,
+    };
+
+    if (filters.status) {
+      filter.status = filters.status;
+    }
+    if (filters.supplierId) {
+      filter.supplier_id = new Types.ObjectId(filters.supplierId);
+    }
+    if (filters.from || filters.to) {
+      const createdAt: Record<string, Date> = {};
+      if (filters.from) {
+        createdAt.$gte = new Date(filters.from);
+      }
+      if (filters.to) {
+        createdAt.$lte = new Date(filters.to);
+      }
+      filter.created_at = createdAt;
+    }
+
+    return filter;
+  }
+
+  private async loadSupplierMap(
+    tenantId: string,
+    supplierIds: string[],
+  ): Promise<Map<string, SupplierDocument>> {
+    const uniqueIds = [...new Set(supplierIds.filter(Boolean))];
+    const map = new Map<string, SupplierDocument>();
+
+    if (uniqueIds.length === 0) {
+      return map;
+    }
+
+    const suppliers = await this.supplierModel.find({
+      tenant_id: new Types.ObjectId(tenantId),
+      _id: { $in: uniqueIds.map((id) => new Types.ObjectId(id)) },
+      is_deleted: false,
+    });
+
+    for (const supplier of suppliers) {
+      map.set(supplier._id.toString(), supplier);
+    }
+
+    return map;
+  }
+
+  private async loadProductMap(
+    tenantId: string,
+    productIds: string[],
+  ): Promise<Map<string, ProductDocument>> {
+    const uniqueIds = [...new Set(productIds.filter(Boolean))];
+    const map = new Map<string, ProductDocument>();
+
+    if (uniqueIds.length === 0) {
+      return map;
+    }
+
+    const products = await this.productModel.find({
+      tenant_id: new Types.ObjectId(tenantId),
+      _id: { $in: uniqueIds.map((id) => new Types.ObjectId(id)) },
+      is_deleted: false,
+    });
+
+    for (const product of products) {
+      map.set(product._id.toString(), product);
+    }
+
+    return map;
+  }
+
+  private async buildPurchaseOrderSummaryCsv(
+    tenantId: string,
+    orders: Array<
+      PurchaseOrder & {
+        _id: Types.ObjectId;
+        created_at?: Date;
+        updated_at?: Date;
+        supplier_id: Types.ObjectId;
+      }
+    >,
+  ): Promise<string> {
+    const supplierIds = orders.map((order) => order.supplier_id.toString());
+    const supplierMap = await this.loadSupplierMap(tenantId, supplierIds);
+
+    const rows = orders.map((order) => {
+      const supplier = supplierMap.get(order.supplier_id.toString());
+
+      return [
+        order.po_number,
+        supplier?.name ?? '',
+        supplier?.phone ?? '',
+        order.status,
+        order.total_amount,
+        order.expected_date?.toISOString().slice(0, 10) ?? '',
+        order.cancel_reason ?? '',
+        order.created_at?.toISOString() ?? '',
+        order.updated_at?.toISOString() ?? '',
+      ];
+    });
+
+    return buildCsv([...PO_SUMMARY_CSV_HEADERS], rows);
+  }
+
+  private async buildPurchaseOrderDetailCsv(
+    tenantId: string,
+    orders: Array<
+      PurchaseOrder & {
+        _id: Types.ObjectId;
+        created_at?: Date;
+        po_number: string;
+        status: PoStatus;
+        supplier_id: Types.ObjectId;
+      }
+    >,
+  ): Promise<string> {
+    if (orders.length === 0) {
+      return buildCsv([...PO_DETAIL_CSV_HEADERS], []);
+    }
+
+    const tenantObjectId = new Types.ObjectId(tenantId);
+    const orderIds = orders.map((order) => order._id);
+    const orderMap = new Map(
+      orders.map((order) => [order._id.toString(), order]),
+    );
+
+    const items = await this.purchaseOrderItemModel
+      .find({
+        tenant_id: tenantObjectId,
+        purchase_order_id: { $in: orderIds },
+      })
+      .sort({ created_at: -1, _id: -1 })
+      .limit(APP.csv.exportMaxRows)
+      .lean();
+
+    const supplierIds = orders.map((order) => order.supplier_id.toString());
+    const productIds = items.map((item) => item.product_id.toString());
+
+    const [supplierMap, productMap] = await Promise.all([
+      this.loadSupplierMap(tenantId, supplierIds),
+      this.loadProductMap(tenantId, productIds),
+    ]);
+
+    const rows = items.map((item) => {
+      const order = orderMap.get(item.purchase_order_id.toString());
+      const supplier = order
+        ? supplierMap.get(order.supplier_id.toString())
+        : undefined;
+      const product = productMap.get(item.product_id.toString());
+      const remaining = item.quantity - item.received_quantity;
+
+      return [
+        order?.po_number ?? '',
+        supplier?.name ?? '',
+        order?.status ?? '',
+        product?.sku ?? '',
+        product?.name ?? '',
+        item.quantity,
+        item.received_quantity,
+        remaining,
+        item.cost_price,
+        item.quantity * item.cost_price,
+        order?.created_at?.toISOString() ?? '',
+      ];
+    });
+
+    return buildCsv([...PO_DETAIL_CSV_HEADERS], rows);
   }
 }

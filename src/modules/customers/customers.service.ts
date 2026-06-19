@@ -62,6 +62,30 @@ export class CustomersService {
     });
   }
 
+  async findManyByIdsInTenant(
+    tenantId: string,
+    ids: string[],
+  ): Promise<Map<string, CustomerDocument>> {
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    const map = new Map<string, CustomerDocument>();
+
+    if (uniqueIds.length === 0) {
+      return map;
+    }
+
+    const customers = await this.customerModel.find({
+      tenant_id: new Types.ObjectId(tenantId),
+      _id: { $in: uniqueIds.map((id) => new Types.ObjectId(id)) },
+      is_deleted: false,
+    });
+
+    for (const customer of customers) {
+      map.set(customer._id.toString(), customer);
+    }
+
+    return map;
+  }
+
   async list(
     tenantId: string,
     page = 1,

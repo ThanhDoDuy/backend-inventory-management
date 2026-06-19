@@ -90,4 +90,20 @@ export class ListPurchaseOrdersQueryDto {
   @IsOptional()
   @IsMongoId()
   supplierId?: string;
+
+  @IsOptional()
+  @IsString()
+  from?: string;
+
+  @IsOptional()
+  @IsString()
+  to?: string;
+}
+
+export type PurchaseOrderExportType = 'summary' | 'detail';
+
+export class ExportPurchaseOrdersQueryDto extends ListPurchaseOrdersQueryDto {
+  @IsOptional()
+  @IsString()
+  export_type?: PurchaseOrderExportType;
 }

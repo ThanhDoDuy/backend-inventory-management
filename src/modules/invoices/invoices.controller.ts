@@ -2,10 +2,13 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator';
 import { RequirePermission } from '../../shared/decorators/require-permission.decorator';
 import { PERMISSIONS } from '../../shared/constants/permission.constants';
@@ -13,6 +16,7 @@ import type { RequestUser } from '../../shared/interfaces/request-user.interface
 import {
   CancelInvoiceDto,
   CreateInvoiceDto,
+  ExportInvoicesQueryDto,
   ListInvoicesQueryDto,
   RefundInvoiceDto,
 } from './dto/invoice.dto';
@@ -31,6 +35,32 @@ export class InvoicesController {
       user.roleId,
       dto,
     );
+  }
+
+  @Get('export')
+  @RequirePermission(PERMISSIONS.INVOICE.VIEW)
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  async export(
+    @CurrentUser() user: RequestUser,
+    @Res() res: Response,
+    @Query() query: ExportInvoicesQueryDto,
+  ) {
+    const csv = await this.invoicesService.exportCsv(
+      user.tenantId,
+      {
+        status: query.status,
+        customerId: query.customerId,
+        paymentMethod: query.paymentMethod,
+        from: query.from,
+        to: query.to,
+      },
+      query.export_type === 'detail' ? 'detail' : 'summary',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="invoices-export.csv"',
+    );
+    return res.send(csv);
   }
 
   @Get()

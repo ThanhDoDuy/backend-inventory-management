@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Patch,
   Post,
@@ -22,6 +23,7 @@ import { APP } from '../../shared/constants/app.constants';
 import {
   CancelPurchaseOrderDto,
   CreatePurchaseOrderDto,
+  ExportPurchaseOrdersQueryDto,
   ReceivePurchaseOrderDto,
   UpdatePurchaseOrderDto,
 } from './dto/purchase-order.dto';
@@ -35,6 +37,31 @@ export class PurchaseOrdersController {
     private readonly purchaseOrdersService: PurchaseOrdersService,
     private readonly purchaseOrdersImportService: PurchaseOrdersImportService,
   ) {}
+
+  @Get('export')
+  @RequirePermission(PERMISSIONS.PO.VIEW)
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  async export(
+    @CurrentUser() user: RequestUser,
+    @Res() res: Response,
+    @Query() query: ExportPurchaseOrdersQueryDto,
+  ) {
+    const csv = await this.purchaseOrdersService.exportCsv(
+      user.tenantId,
+      {
+        status: query.status,
+        supplierId: query.supplierId,
+        from: query.from,
+        to: query.to,
+      },
+      query.export_type === 'detail' ? 'detail' : 'summary',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="purchase-orders-export.csv"',
+    );
+    return res.send(csv);
+  }
 
   @Get('export/template')
   @RequirePermission(PERMISSIONS.PO.VIEW)
@@ -93,6 +120,8 @@ export class PurchaseOrdersController {
     @Query('limit') limit?: string,
     @Query('status') status?: PoStatus,
     @Query('supplierId') supplierId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
     return this.purchaseOrdersService.list(
       user.tenantId,
@@ -100,6 +129,8 @@ export class PurchaseOrdersController {
       limit ? parseInt(limit, 10) : 20,
       status,
       supplierId,
+      from,
+      to,
     );
   }
 

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { SettingsModule } from '../settings/settings.module';
 import { ProductsModule } from '../products/products.module';
+import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
 import {
@@ -20,6 +21,7 @@ import {
     MongooseModule.forFeature([
       { name: InventoryTransaction.name, schema: InventoryTransactionSchema },
       { name: InventoryBalance.name, schema: InventoryBalanceSchema },
+      { name: Product.name, schema: ProductSchema },
     ]),
   ],
   controllers: [InventoryController],

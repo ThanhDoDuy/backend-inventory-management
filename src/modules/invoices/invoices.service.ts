@@ -16,6 +16,7 @@ import {
 } from '../../shared/constants/business.enums';
 import { Role as RoleCode } from '../../shared/constants/roles.enum';
 import { AppError, ERRORS } from '../../shared/errors';
+import { buildCsv } from '../../shared/utils/csv.util';
 import { CustomersService } from '../customers/customers.service';
 import { InventoryReferenceType } from '../inventory/constants/inventory.enums';
 import { InventoryService } from '../inventory/inventory.service';
@@ -50,6 +51,46 @@ interface ResolvedLineItem {
 interface RefundedQuantityMap {
   [productId: string]: number;
 }
+
+type InvoiceExportType = 'summary' | 'detail';
+
+interface InvoiceListFilters {
+  status?: InvoiceStatus;
+  customerId?: string;
+  paymentMethod?: PaymentMethod;
+  from?: string;
+  to?: string;
+}
+
+const INVOICE_SUMMARY_CSV_HEADERS = [
+  'invoice_number',
+  'customer_name',
+  'customer_type',
+  'customer_tax_code',
+  'subtotal',
+  'discount_percent',
+  'discount_amount',
+  'tax_percent',
+  'tax',
+  'total',
+  'payment_method',
+  'status',
+  'created_at',
+] as const;
+
+const INVOICE_DETAIL_CSV_HEADERS = [
+  'invoice_number',
+  'created_at',
+  'status',
+  'customer_name',
+  'customer_tax_code',
+  'product_sku',
+  'product_name',
+  'quantity',
+  'unit_price',
+  'line_total',
+  'price_tier_code',
+] as const;
 
 @Injectable()
 export class InvoicesService {
@@ -270,14 +311,9 @@ export class InvoicesService {
 
   async list(
     tenantId: string,
-    filters: {
+    filters: InvoiceListFilters & {
       page?: number;
       limit?: number;
-      status?: InvoiceStatus;
-      customerId?: string;
-      paymentMethod?: PaymentMethod;
-      from?: string;
-      to?: string;
     },
   ) {
     this.logger.step('InvoicesService.list', { tenantId, ...filters });
@@ -287,30 +323,7 @@ export class InvoicesService {
       filters.limit && filters.limit > 0 ? Math.min(filters.limit, 100) : 20;
     const skip = (page - 1) * limit;
 
-    const query: Record<string, unknown> = {
-      tenant_id: new Types.ObjectId(tenantId),
-      is_deleted: false,
-    };
-
-    if (filters.status) {
-      query.status = filters.status;
-    }
-    if (filters.customerId) {
-      query.customer_id = new Types.ObjectId(filters.customerId);
-    }
-    if (filters.paymentMethod) {
-      query.payment_method = filters.paymentMethod;
-    }
-    if (filters.from || filters.to) {
-      const createdAt: Record<string, Date> = {};
-      if (filters.from) {
-        createdAt.$gte = new Date(filters.from);
-      }
-      if (filters.to) {
-        createdAt.$lte = new Date(filters.to);
-      }
-      query.created_at = createdAt;
-    }
+    const query = this.buildInvoiceListQuery(tenantId, filters);
 
     const [items, total] = await Promise.all([
       this.invoiceModel
@@ -328,6 +341,31 @@ export class InvoicesService {
       page,
       limit,
     };
+  }
+
+  async exportCsv(
+    tenantId: string,
+    filters: InvoiceListFilters,
+    exportType: InvoiceExportType = 'summary',
+  ): Promise<string> {
+    this.logger.step('InvoicesService.exportCsv', {
+      tenantId,
+      exportType,
+      ...filters,
+    });
+
+    const query = this.buildInvoiceListQuery(tenantId, filters);
+    const invoices = await this.invoiceModel
+      .find(query)
+      .sort({ created_at: -1, _id: -1 })
+      .limit(APP.csv.exportMaxRows)
+      .lean();
+
+    if (exportType === 'detail') {
+      return this.buildInvoiceDetailCsv(tenantId, invoices);
+    }
+
+    return this.buildInvoiceSummaryCsv(tenantId, invoices);
   }
 
   async getById(tenantId: string, id: string) {
@@ -821,6 +859,141 @@ export class InvoicesService {
     }
 
     return map;
+  }
+
+  private buildInvoiceListQuery(
+    tenantId: string,
+    filters: InvoiceListFilters,
+  ): Record<string, unknown> {
+    const query: Record<string, unknown> = {
+      tenant_id: new Types.ObjectId(tenantId),
+      is_deleted: false,
+    };
+
+    if (filters.status) {
+      query.status = filters.status;
+    }
+    if (filters.customerId) {
+      query.customer_id = new Types.ObjectId(filters.customerId);
+    }
+    if (filters.paymentMethod) {
+      query.payment_method = filters.paymentMethod;
+    }
+    if (filters.from || filters.to) {
+      const createdAt: Record<string, Date> = {};
+      if (filters.from) {
+        createdAt.$gte = new Date(filters.from);
+      }
+      if (filters.to) {
+        createdAt.$lte = new Date(filters.to);
+      }
+      query.created_at = createdAt;
+    }
+
+    return query;
+  }
+
+  private async buildInvoiceSummaryCsv(
+    tenantId: string,
+    invoices: Array<
+      Invoice & { _id: Types.ObjectId; created_at?: Date; customer_id?: Types.ObjectId }
+    >,
+  ): Promise<string> {
+    const customerIds = invoices
+      .map((invoice) => invoice.customer_id?.toString())
+      .filter((id): id is string => Boolean(id));
+    const customerMap =
+      await this.customersService.findManyByIdsInTenant(tenantId, customerIds);
+
+    const rows = invoices.map((invoice) => {
+      const customer = invoice.customer_id
+        ? customerMap.get(invoice.customer_id.toString())
+        : undefined;
+
+      return [
+        invoice.invoice_number,
+        customer?.name ?? 'Walk-in',
+        customer?.customer_type ?? '',
+        customer?.tax_code ?? '',
+        invoice.subtotal,
+        invoice.discount,
+        invoice.discount_amount ?? 0,
+        invoice.tax_percent ?? 0,
+        invoice.tax,
+        invoice.total,
+        invoice.payment_method,
+        invoice.status,
+        invoice.created_at?.toISOString() ?? '',
+      ];
+    });
+
+    return buildCsv([...INVOICE_SUMMARY_CSV_HEADERS], rows);
+  }
+
+  private async buildInvoiceDetailCsv(
+    tenantId: string,
+    invoices: Array<
+      Invoice & {
+        _id: Types.ObjectId;
+        created_at?: Date;
+        customer_id?: Types.ObjectId;
+        invoice_number: string;
+        status: InvoiceStatus;
+      }
+    >,
+  ): Promise<string> {
+    if (invoices.length === 0) {
+      return buildCsv([...INVOICE_DETAIL_CSV_HEADERS], []);
+    }
+
+    const tenantObjectId = new Types.ObjectId(tenantId);
+    const invoiceIds = invoices.map((invoice) => invoice._id);
+    const invoiceMap = new Map(
+      invoices.map((invoice) => [invoice._id.toString(), invoice]),
+    );
+
+    const items = await this.invoiceItemModel
+      .find({
+        tenant_id: tenantObjectId,
+        invoice_id: { $in: invoiceIds },
+      })
+      .sort({ created_at: -1, _id: -1 })
+      .limit(APP.csv.exportMaxRows)
+      .lean();
+
+    const customerIds = invoices
+      .map((invoice) => invoice.customer_id?.toString())
+      .filter((id): id is string => Boolean(id));
+    const productIds = items.map((item) => item.product_id.toString());
+
+    const [customerMap, productMap] = await Promise.all([
+      this.customersService.findManyByIdsInTenant(tenantId, customerIds),
+      this.productsService.findManyByIdsInTenant(tenantId, productIds),
+    ]);
+
+    const rows = items.map((item) => {
+      const invoice = invoiceMap.get(item.invoice_id.toString());
+      const customer = invoice?.customer_id
+        ? customerMap.get(invoice.customer_id.toString())
+        : undefined;
+      const product = productMap.get(item.product_id.toString());
+
+      return [
+        invoice?.invoice_number ?? '',
+        invoice?.created_at?.toISOString() ?? '',
+        invoice?.status ?? '',
+        customer?.name ?? 'Walk-in',
+        customer?.tax_code ?? '',
+        product?.sku ?? '',
+        product?.name ?? '',
+        item.quantity,
+        item.unit_price,
+        item.total,
+        item.price_tier_code ?? 'RETAIL',
+      ];
+    });
+
+    return buildCsv([...INVOICE_DETAIL_CSV_HEADERS], rows);
   }
 
   private async findInvoiceInTenant(

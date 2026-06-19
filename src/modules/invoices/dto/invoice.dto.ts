@@ -126,3 +126,31 @@ export class ListInvoicesQueryDto {
   @IsString()
   to?: string;
 }
+
+export type InvoiceExportType = 'summary' | 'detail';
+
+export class ExportInvoicesQueryDto {
+  @IsOptional()
+  @IsEnum(InvoiceStatus)
+  status?: InvoiceStatus;
+
+  @IsOptional()
+  @IsMongoId()
+  customerId?: string;
+
+  @IsOptional()
+  @IsEnum(PaymentMethod)
+  paymentMethod?: PaymentMethod;
+
+  @IsOptional()
+  @IsString()
+  from?: string;
+
+  @IsOptional()
+  @IsString()
+  to?: string;
+
+  @IsOptional()
+  @IsString()
+  export_type?: InvoiceExportType;
+}

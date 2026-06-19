@@ -11,8 +11,12 @@ import { DomainEventPublisher } from '../../infrastructure/queue/domain-event.pu
 import { APP } from '../../shared/constants/app.constants';
 import { RedisService } from '../../infrastructure/redis/redis.service';
 import { AppError, ERRORS } from '../../shared/errors';
+import { buildCsv } from '../../shared/utils/csv.util';
+import { escapeRegex } from '../../shared/utils/regex.util';
 import { acquireLockWithRetry } from '../../shared/utils/redis-lock.util';
 import { ProductsService } from '../products/products.service';
+import { Product, ProductDocument } from '../products/schemas/product.schema';
+import { ProductStatus } from '../../shared/constants/business.enums';
 import { SettingsService } from '../settings/settings.service';
 import {
   AdjustmentReason,
@@ -71,6 +75,31 @@ export interface RebuildResult {
   products_rebuilt: number;
 }
 
+const BALANCE_CSV_HEADERS = [
+  'product_sku',
+  'product_name',
+  'category_name',
+  'available_quantity',
+  'reserved_quantity',
+  'minimum_stock',
+  'cost_price',
+  'retail_price',
+  'status',
+] as const;
+
+const TRANSACTION_CSV_HEADERS = [
+  'created_at',
+  'type',
+  'product_sku',
+  'product_name',
+  'quantity',
+  'balance_after',
+  'reference_type',
+  'reference_id',
+  'note',
+  'created_by',
+] as const;
+
 @Injectable()
 export class InventoryService {
   constructor(
@@ -78,6 +107,8 @@ export class InventoryService {
     private transactionModel: Model<InventoryTransactionDocument>,
     @InjectModel(InventoryBalance.name)
     private balanceModel: Model<InventoryBalanceDocument>,
+    @InjectModel(Product.name)
+    private productModel: Model<ProductDocument>,
     @InjectConnection() private connection: Connection,
     private productsService: ProductsService,
     private settingsService: SettingsService,
@@ -424,39 +455,7 @@ export class InventoryService {
       filters.limit && filters.limit > 0 ? Math.min(filters.limit, 100) : 20;
     const skip = (page - 1) * limit;
 
-    const query: Record<string, unknown> = {
-      tenant_id: new Types.ObjectId(tenantId),
-      is_deleted: false,
-    };
-
-    if (filters.productId) {
-      query.product_id = new Types.ObjectId(filters.productId);
-    }
-
-    if (filters.type) {
-      const normalizedType = filters.type.toUpperCase();
-      if (
-        !Object.values(InventoryTransactionType).includes(
-          normalizedType as InventoryTransactionType,
-        )
-      ) {
-        throw new AppError(ERRORS.COMMON.VALIDATION_FAILED, {
-          message: 'Invalid transaction type filter',
-        });
-      }
-      query.type = normalizedType;
-    }
-
-    if (filters.from || filters.to) {
-      const createdAt: Record<string, Date> = {};
-      if (filters.from) {
-        createdAt.$gte = new Date(filters.from);
-      }
-      if (filters.to) {
-        createdAt.$lte = new Date(filters.to);
-      }
-      query.created_at = createdAt;
-    }
+    const query = this.buildTransactionListQuery(tenantId, filters);
 
     const [items, total] = await Promise.all([
       this.transactionModel
@@ -474,6 +473,110 @@ export class InventoryService {
       page,
       limit,
     };
+  }
+
+  async exportBalancesCsv(
+    tenantId: string,
+    filters: {
+      search?: string;
+      category_id?: string;
+      status?: ProductStatus;
+      low_stock_only?: boolean;
+    },
+  ): Promise<string> {
+    this.logger.step('InventoryService.exportBalancesCsv', { tenantId, ...filters });
+
+    const tenantObjectId = new Types.ObjectId(tenantId);
+    const productFilter = this.buildProductExportFilter(tenantId, filters);
+    const products = await this.productModel
+      .find(productFilter)
+      .populate('category_id', 'name')
+      .sort({ sku: 1 })
+      .limit(APP.csv.exportMaxRows);
+
+    const balances = await this.balanceModel
+      .find({ tenant_id: tenantObjectId })
+      .select('product_id available_quantity reserved_quantity')
+      .lean();
+    const balanceMap = new Map(
+      balances.map((balance) => [balance.product_id.toString(), balance]),
+    );
+
+    const rows: unknown[][] = [];
+    for (const product of products) {
+      const balance = balanceMap.get(product._id.toString());
+      const available = balance?.available_quantity ?? 0;
+      const reserved = balance?.reserved_quantity ?? 0;
+
+      if (filters.low_stock_only && available > product.minimum_stock) {
+        continue;
+      }
+
+      const category = product.populated('category_id')
+        ? (product.category_id as unknown as { name?: string })
+        : null;
+
+      rows.push([
+        product.sku,
+        product.name,
+        category?.name ?? '',
+        available,
+        reserved,
+        product.minimum_stock,
+        product.cost_price,
+        product.selling_price,
+        product.status,
+      ]);
+    }
+
+    return buildCsv([...BALANCE_CSV_HEADERS], rows);
+  }
+
+  async exportTransactionsCsv(
+    tenantId: string,
+    filters: {
+      productId?: string;
+      type?: string;
+      from?: string;
+      to?: string;
+    },
+  ): Promise<string> {
+    this.logger.step('InventoryService.exportTransactionsCsv', {
+      tenantId,
+      ...filters,
+    });
+
+    const query = this.buildTransactionListQuery(tenantId, filters);
+    const transactions = await this.transactionModel
+      .find(query)
+      .sort({ created_at: -1, _id: -1 })
+      .limit(APP.csv.exportMaxRows)
+      .lean();
+
+    const productIds = transactions.map((item) => item.product_id.toString());
+    const productMap = await this.productsService.findManyByIdsInTenant(
+      tenantId,
+      productIds,
+    );
+
+    const rows = transactions.map((transaction) => {
+      const product = productMap.get(transaction.product_id.toString());
+
+      return [
+        transaction.created_at?.toISOString() ?? '',
+        transaction.type,
+        product?.sku ?? '',
+        product?.name ?? '',
+        transaction.quantity,
+        transaction.balance_after,
+        transaction.reference_type,
+        transaction.reference_id,
+        transaction.note ?? '',
+        transaction.created_by.toString(),
+      ];
+    });
+
+    return buildCsv([...TRANSACTION_CSV_HEADERS], rows);
   }
 
   async rebuild(tenantId: string): Promise<RebuildResult> {
@@ -759,5 +862,84 @@ export class InventoryService {
       created_at: transaction.created_at,
       created_by: transaction.created_by.toString(),
     };
+  }
+
+  private buildTransactionListQuery(
+    tenantId: string,
+    filters: {
+      productId?: string;
+      type?: string;
+      from?: string;
+      to?: string;
+    },
+  ): Record<string, unknown> {
+    const query: Record<string, unknown> = {
+      tenant_id: new Types.ObjectId(tenantId),
+      is_deleted: false,
+    };
+
+    if (filters.productId) {
+      query.product_id = new Types.ObjectId(filters.productId);
+    }
+
+    if (filters.type) {
+      const normalizedType = filters.type.toUpperCase();
+      if (
+        !Object.values(InventoryTransactionType).includes(
+          normalizedType as InventoryTransactionType,
+        )
+      ) {
+        throw new AppError(ERRORS.COMMON.VALIDATION_FAILED, {
+          message: 'Invalid transaction type filter',
+        });
+      }
+      query.type = normalizedType;
+    }
+
+    if (filters.from || filters.to) {
+      const createdAt: Record<string, Date> = {};
+      if (filters.from) {
+        createdAt.$gte = new Date(filters.from);
+      }
+      if (filters.to) {
+        createdAt.$lte = new Date(filters.to);
+      }
+      query.created_at = createdAt;
+    }
+
+    return query;
+  }
+
+  private buildProductExportFilter(
+    tenantId: string,
+    filters: {
+      search?: string;
+      category_id?: string;
+      status?: ProductStatus;
+    },
+  ): Record<string, unknown> {
+    const filter: Record<string, unknown> = {
+      tenant_id: new Types.ObjectId(tenantId),
+      is_deleted: false,
+    };
+
+    if (filters.category_id) {
+      filter.category_id = new Types.ObjectId(filters.category_id);
+    }
+    if (filters.status) {
+      filter.status = filters.status;
+    }
+
+    const trimmed = filters.search?.trim();
+    if (trimmed) {
+      const escaped = escapeRegex(trimmed);
+      filter.$or = [
+        { name: { $regex: escaped, $options: 'i' } },
+        { sku: { $regex: `^${escaped}`, $options: 'i' } },
+        { barcode: { $regex: `^${escaped}`, $options: 'i' } },
+      ];
+    }
+
+    return filter;
   }
 }

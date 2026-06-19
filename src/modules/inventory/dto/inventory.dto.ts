@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsMongoId,
   IsNotEmpty,
@@ -8,6 +9,8 @@ import {
   MaxLength,
   NotEquals,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { ProductStatus } from '../../../shared/constants/business.enums';
 import { AdjustmentReason } from '../constants/inventory.enums';
 
 export class AdjustmentDto {
@@ -56,4 +59,42 @@ export class TransactionQueryDto {
 
   @IsOptional()
   limit?: number;
+}
+
+export class ExportBalancesQueryDto {
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @IsMongoId()
+  category_id?: string;
+
+  @IsOptional()
+  @IsEnum(ProductStatus)
+  status?: ProductStatus;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  low_stock_only?: boolean;
+}
+
+export class ExportTransactionsQueryDto {
+  @IsOptional()
+  @IsMongoId()
+  productId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  from?: string;
+
+  @IsOptional()
+  @IsString()
+  to?: string;
 }
