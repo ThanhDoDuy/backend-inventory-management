@@ -47,6 +47,43 @@ export class TenantsService {
     return this.tenantModel.findById(id);
   }
 
+  async updateProfile(
+    tenantId: string,
+    updates: {
+      name?: string;
+      address?: string;
+      phone?: string;
+      city?: string;
+      state?: string;
+    },
+  ): Promise<TenantDocument> {
+    this.logger.step('TenantsService.updateProfile', { tenantId });
+
+    const tenant = await this.findById(tenantId);
+    if (!tenant) {
+      throw new AppError(ERRORS.TENANT.NOT_FOUND);
+    }
+
+    if (updates.name !== undefined) {
+      tenant.name = updates.name.trim();
+    }
+    if (updates.address !== undefined) {
+      tenant.address = updates.address.trim();
+    }
+    if (updates.phone !== undefined) {
+      tenant.phone = updates.phone.trim();
+    }
+    if (updates.city !== undefined) {
+      tenant.city = updates.city.trim();
+    }
+    if (updates.state !== undefined) {
+      tenant.state = updates.state.trim();
+    }
+
+    await tenant.save();
+    return tenant;
+  }
+
   slugify(name: string): string {
     const base = name
       .toLowerCase()

@@ -57,6 +57,18 @@ export class RbacService {
     return role.permissionCodes.includes(`${resource}:*`);
   }
 
+  async getRolePermissionCodes(tenantId: string, roleId: string) {
+    const role = await this.getRolePermissions(tenantId, roleId);
+    if (!role) {
+      throw new AppError(ERRORS.RBAC.ROLE_NOT_FOUND);
+    }
+
+    return {
+      is_wildcard: role.isWildcard,
+      permission_codes: role.permissionCodes,
+    };
+  }
+
   async listPermissions() {
     const cached = await this.redisService.get(APP.rbac.permissionsCacheKey);
     if (cached) {

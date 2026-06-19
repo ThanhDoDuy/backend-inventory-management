@@ -120,6 +120,11 @@ export const ERRORS = {
       message: 'Platform capacity reached',
       httpStatus: HttpStatus.CONFLICT,
     },
+    NOT_FOUND: {
+      errorCode: 4001,
+      message: 'Tenant not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
   },
   PRODUCT: {
     NOT_FOUND: {

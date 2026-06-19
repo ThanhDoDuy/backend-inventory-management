@@ -26,6 +26,10 @@ import { InvoicesService } from './invoices.service';
 export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
 
+  private toAccess(user: RequestUser) {
+    return { userId: user.userId, roleId: user.roleId };
+  }
+
   @Post()
   @RequirePermission(PERMISSIONS.INVOICE.CREATE)
   create(@CurrentUser() user: RequestUser, @Body() dto: CreateInvoiceDto) {
@@ -55,6 +59,7 @@ export class InvoicesController {
         to: query.to,
       },
       query.export_type === 'detail' ? 'detail' : 'summary',
+      this.toAccess(user),
     );
     res.setHeader(
       'Content-Disposition',
@@ -66,27 +71,39 @@ export class InvoicesController {
   @Get()
   @RequirePermission(PERMISSIONS.INVOICE.VIEW)
   list(@CurrentUser() user: RequestUser, @Query() query: ListInvoicesQueryDto) {
-    return this.invoicesService.list(user.tenantId, {
-      page: query.page ? Number(query.page) : undefined,
-      limit: query.limit ? Number(query.limit) : undefined,
-      status: query.status,
-      customerId: query.customerId,
-      paymentMethod: query.paymentMethod,
-      from: query.from,
-      to: query.to,
-    });
+    return this.invoicesService.list(
+      user.tenantId,
+      {
+        page: query.page ? Number(query.page) : undefined,
+        limit: query.limit ? Number(query.limit) : undefined,
+        status: query.status,
+        customerId: query.customerId,
+        paymentMethod: query.paymentMethod,
+        from: query.from,
+        to: query.to,
+      },
+      this.toAccess(user),
+    );
   }
 
   @Get(':id/print')
   @RequirePermission(PERMISSIONS.INVOICE.VIEW)
   print(@CurrentUser() user: RequestUser, @Param('id') id: string) {
-    return this.invoicesService.getPrintData(user.tenantId, id);
+    return this.invoicesService.getPrintData(
+      user.tenantId,
+      id,
+      this.toAccess(user),
+    );
   }
 
   @Get(':id')
   @RequirePermission(PERMISSIONS.INVOICE.VIEW)
   getById(@CurrentUser() user: RequestUser, @Param('id') id: string) {
-    return this.invoicesService.getById(user.tenantId, id);
+    return this.invoicesService.getById(
+      user.tenantId,
+      id,
+      this.toAccess(user),
+    );
   }
 
   @Post(':id/cancel')
@@ -98,7 +115,7 @@ export class InvoicesController {
   ) {
     return this.invoicesService.cancel(
       user.tenantId,
-      user.userId,
+      this.toAccess(user),
       id,
       dto,
     );
@@ -111,6 +128,11 @@ export class InvoicesController {
     @Param('id') id: string,
     @Body() dto: RefundInvoiceDto,
   ) {
-    return this.invoicesService.refund(user.tenantId, user.userId, id, dto);
+    return this.invoicesService.refund(
+      user.tenantId,
+      this.toAccess(user),
+      id,
+      dto,
+    );
   }
 }

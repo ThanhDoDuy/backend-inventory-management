@@ -199,6 +199,17 @@ export class SuppliersController {
     return this.suppliersService.toResponse(updated);
   }
 
+  @Post(':id/activate')
+  @RequirePermission(PERMISSIONS.SUPPLIERS.UPDATE)
+  async activate(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    const updated = await this.suppliersService.activate(
+      user.tenantId,
+      user.userId,
+      id,
+    );
+    return this.suppliersService.toResponse(updated);
+  }
+
   @Delete(':id')
   @RequirePermission(PERMISSIONS.SUPPLIERS.DISABLE)
   async remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {

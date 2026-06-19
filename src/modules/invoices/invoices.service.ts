@@ -62,6 +62,11 @@ interface InvoiceListFilters {
   to?: string;
 }
 
+interface InvoiceAccessContext {
+  userId: string;
+  roleId: string;
+}
+
 const INVOICE_SUMMARY_CSV_HEADERS = [
   'invoice_number',
   'customer_name',
@@ -315,6 +320,7 @@ export class InvoicesService {
       page?: number;
       limit?: number;
     },
+    access?: InvoiceAccessContext,
   ) {
     this.logger.step('InvoicesService.list', { tenantId, ...filters });
 
@@ -323,7 +329,7 @@ export class InvoicesService {
       filters.limit && filters.limit > 0 ? Math.min(filters.limit, 100) : 20;
     const skip = (page - 1) * limit;
 
-    const query = this.buildInvoiceListQuery(tenantId, filters);
+    const query = await this.buildInvoiceListQuery(tenantId, filters, access);
 
     const [items, total] = await Promise.all([
       this.invoiceModel
@@ -347,6 +353,7 @@ export class InvoicesService {
     tenantId: string,
     filters: InvoiceListFilters,
     exportType: InvoiceExportType = 'summary',
+    access?: InvoiceAccessContext,
   ): Promise<string> {
     this.logger.step('InvoicesService.exportCsv', {
       tenantId,
@@ -354,7 +361,7 @@ export class InvoicesService {
       ...filters,
     });
 
-    const query = this.buildInvoiceListQuery(tenantId, filters);
+    const query = await this.buildInvoiceListQuery(tenantId, filters, access);
     const invoices = await this.invoiceModel
       .find(query)
       .sort({ created_at: -1, _id: -1 })
@@ -368,13 +375,19 @@ export class InvoicesService {
     return this.buildInvoiceSummaryCsv(tenantId, invoices);
   }
 
-  async getById(tenantId: string, id: string) {
+  async getById(
+    tenantId: string,
+    id: string,
+    access?: InvoiceAccessContext,
+  ) {
     this.logger.step('InvoicesService.getById', { tenantId, id });
 
     const invoice = await this.findInvoiceInTenant(tenantId, id);
     if (!invoice) {
       throw new AppError(ERRORS.INVOICE.NOT_FOUND);
     }
+
+    await this.assertCanAccessInvoice(tenantId, invoice, access);
 
     const [items, payments, refunds] = await Promise.all([
       this.invoiceItemModel
@@ -401,8 +414,17 @@ export class InvoicesService {
     const productIds = items.map((item) => item.product_id.toString());
     const productMap = await this.loadProductNames(tenantId, productIds);
 
+    const customer = invoice.customer_id
+      ? await this.loadCustomerSummary(
+          tenantId,
+          invoice.customer_id.toString(),
+        )
+      : null;
+
     return {
       ...this.toInvoiceSummary(invoice),
+      customer_id: invoice.customer_id?.toString() ?? null,
+      customer,
       items: items.map((item) => ({
         id: item._id,
         product_id: item.product_id,
@@ -436,7 +458,7 @@ export class InvoicesService {
 
   async cancel(
     tenantId: string,
-    userId: string,
+    access: InvoiceAccessContext,
     id: string,
     dto: CancelInvoiceDto,
   ) {
@@ -446,6 +468,8 @@ export class InvoicesService {
     if (!invoice) {
       throw new AppError(ERRORS.INVOICE.NOT_FOUND);
     }
+
+    await this.assertCanAccessInvoice(tenantId, invoice, access);
 
     if (invoice.status !== InvoiceStatus.PAID) {
       throw new AppError(ERRORS.INVOICE.INVALID_STATUS, {
@@ -480,18 +504,18 @@ export class InvoicesService {
           item.quantity,
           InventoryReferenceType.INVOICE,
           `${id}:cancel:${productId}:${item.price_tier_code ?? 'RETAIL'}`,
-          userId,
+          access.userId,
           session,
         );
       }
 
       invoice.status = InvoiceStatus.CANCELLED;
-      invoice.modified_by = new Types.ObjectId(userId);
+      invoice.modified_by = new Types.ObjectId(access.userId);
       await invoice.save({ session });
 
       await session.commitTransaction();
 
-      return this.getById(tenantId, id);
+      return this.getById(tenantId, id, access);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -502,7 +526,7 @@ export class InvoicesService {
 
   async refund(
     tenantId: string,
-    userId: string,
+    access: InvoiceAccessContext,
     id: string,
     dto: RefundInvoiceDto,
   ) {
@@ -516,6 +540,8 @@ export class InvoicesService {
     if (!invoice) {
       throw new AppError(ERRORS.INVOICE.NOT_FOUND);
     }
+
+    await this.assertCanAccessInvoice(tenantId, invoice, access);
 
     if (invoice.status !== InvoiceStatus.PAID) {
       throw new AppError(ERRORS.INVOICE.INVALID_STATUS, {
@@ -587,7 +613,7 @@ export class InvoicesService {
             })),
             amount: refundAmount,
             reason: dto.reason?.trim() ?? '',
-            created_by: new Types.ObjectId(userId),
+            created_by: new Types.ObjectId(access.userId),
           },
         ],
         { session, ordered: true },
@@ -600,7 +626,7 @@ export class InvoicesService {
           line.quantity,
           InventoryReferenceType.INVOICE,
           `${id}:refund:${refundId.toString()}:${line.productId}`,
-          userId,
+          access.userId,
           session,
         );
       }
@@ -617,13 +643,13 @@ export class InvoicesService {
 
       if (fullyRefunded) {
         invoice.status = InvoiceStatus.REFUNDED;
-        invoice.modified_by = new Types.ObjectId(userId);
+        invoice.modified_by = new Types.ObjectId(access.userId);
         await invoice.save({ session });
       }
 
       await session.commitTransaction();
 
-      return this.getById(tenantId, id);
+      return this.getById(tenantId, id, access);
     } catch (error) {
       await session.abortTransaction();
       throw error;
@@ -632,10 +658,14 @@ export class InvoicesService {
     }
   }
 
-  async getPrintData(tenantId: string, id: string) {
+  async getPrintData(
+    tenantId: string,
+    id: string,
+    access?: InvoiceAccessContext,
+  ) {
     this.logger.step('InvoicesService.getPrintData', { tenantId, id });
 
-    const detail = await this.getById(tenantId, id);
+    const detail = await this.getById(tenantId, id, access);
     const tenant = await this.tenantModel
       .findById(new Types.ObjectId(tenantId))
       .lean();
@@ -648,6 +678,10 @@ export class InvoicesService {
       store: {
         name: tenant?.name ?? '',
         slug: tenant?.slug ?? '',
+        address: tenant?.address ?? '',
+        phone: tenant?.phone ?? '',
+        city: tenant?.city ?? '',
+        state: tenant?.state ?? '',
       },
       invoice: {
         id: detail.id,
@@ -656,9 +690,7 @@ export class InvoicesService {
         created_at: detail.created_at,
         payment_method: detail.payment_method,
       },
-      customer: detail.customer_id
-        ? { id: detail.customer_id }
-        : null,
+      customer: detail.customer,
       lines: detail.items.map((item) => ({
         product_name: item.product_name,
         quantity: item.quantity,
@@ -861,14 +893,72 @@ export class InvoicesService {
     return map;
   }
 
-  private buildInvoiceListQuery(
+  private async loadCustomerSummary(tenantId: string, customerId: string) {
+    const customer = await this.customersService.findByIdInTenant(
+      tenantId,
+      customerId,
+    );
+    if (!customer) {
+      return null;
+    }
+
+    return {
+      id: customer._id.toString(),
+      name: customer.name,
+      customer_type: customer.customer_type,
+      tax_code: customer.tax_code ?? '',
+      address: customer.address ?? '',
+      phone: customer.phone ?? '',
+      contact_person: customer.contact_person ?? '',
+    };
+  }
+
+  private async resolveCreatedByFilter(
+    tenantId: string,
+    access?: InvoiceAccessContext,
+  ): Promise<string | undefined> {
+    if (!access) {
+      return undefined;
+    }
+
+    const role = await this.rbacService.getRoleById(tenantId, access.roleId);
+    if (role.code === RoleCode.STAFF) {
+      return access.userId;
+    }
+
+    return undefined;
+  }
+
+  private async assertCanAccessInvoice(
+    tenantId: string,
+    invoice: Pick<InvoiceDocument, 'created_by'>,
+    access?: InvoiceAccessContext,
+  ): Promise<void> {
+    const createdByFilter = await this.resolveCreatedByFilter(tenantId, access);
+    if (!createdByFilter) {
+      return;
+    }
+
+    const ownerId = invoice.created_by?.toString();
+    if (ownerId !== createdByFilter) {
+      throw new AppError(ERRORS.INVOICE.NOT_FOUND);
+    }
+  }
+
+  private async buildInvoiceListQuery(
     tenantId: string,
     filters: InvoiceListFilters,
-  ): Record<string, unknown> {
+    access?: InvoiceAccessContext,
+  ): Promise<Record<string, unknown>> {
     const query: Record<string, unknown> = {
       tenant_id: new Types.ObjectId(tenantId),
       is_deleted: false,
     };
+
+    const createdByFilter = await this.resolveCreatedByFilter(tenantId, access);
+    if (createdByFilter) {
+      query.created_by = new Types.ObjectId(createdByFilter);
+    }
 
     if (filters.status) {
       query.status = filters.status;

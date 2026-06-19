@@ -214,6 +214,10 @@ export class AuthService {
     return this.usersService.toProfile(user);
   }
 
+  async permissions(tenantId: string, roleId: string) {
+    return this.rbacService.getRolePermissionCodes(tenantId, roleId);
+  }
+
   async changePassword(userId: string, dto: ChangePasswordDto) {
     this.logger.step('AuthService.changePassword', { userId });
 

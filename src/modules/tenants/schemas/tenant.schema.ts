@@ -9,6 +9,18 @@ export class Tenant {
   @Prop({ required: true })
   name: string;
 
+  @Prop({ default: '' })
+  address: string;
+
+  @Prop({ default: '' })
+  phone: string;
+
+  @Prop({ default: '' })
+  city: string;
+
+  @Prop({ default: '' })
+  state: string;
+
   @Prop({ required: true, unique: true })
   slug: string;
 

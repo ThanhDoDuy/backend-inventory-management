@@ -206,6 +206,17 @@ export class CustomersController {
     return this.customersService.toResponse(updated);
   }
 
+  @Post(':id/activate')
+  @RequirePermission(PERMISSIONS.CUSTOMERS.UPDATE)
+  async activate(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    const updated = await this.customersService.activate(
+      user.tenantId,
+      user.userId,
+      id,
+    );
+    return this.customersService.toResponse(updated);
+  }
+
   @Delete(':id')
   @RequirePermission(PERMISSIONS.CUSTOMERS.DISABLE)
   async remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {

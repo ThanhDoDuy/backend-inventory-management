@@ -53,6 +53,11 @@ export class AuthController {
     return this.authService.profile(user.userId);
   }
 
+  @Get('permissions')
+  permissions(@CurrentUser() user: RequestUser) {
+    return this.authService.permissions(user.tenantId, user.roleId);
+  }
+
   @Patch('change-password')
   changePassword(
     @CurrentUser() user: RequestUser,
