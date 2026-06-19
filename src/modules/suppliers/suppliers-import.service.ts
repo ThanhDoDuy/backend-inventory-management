@@ -12,11 +12,9 @@ import {
 } from '../../shared/utils/import-file.util';
 import { normalizePhone } from '../../shared/utils/phone.util';
 import {
-  SUPPLIER_IMPORT_HEADERS,
-  SUPPLIER_IMPORT_MAX_ROWS,
-  SUPPLIER_IMPORT_PREVIEW_TTL_SECONDS,
+  APP,
   type SupplierImportMode,
-} from './constants/supplier-import.constants';
+} from '../../shared/constants/app.constants';
 import { SupplierImportConfirmDto } from './dto/supplier-import.dto';
 import { Supplier, SupplierDocument } from './schemas/supplier.schema';
 import { SuppliersService } from './suppliers.service';
@@ -77,7 +75,7 @@ export class SuppliersImportService {
       throw new AppError(ERRORS.IMPORT.INVALID_FORMAT);
     }
 
-    const expectedHeaders = [...SUPPLIER_IMPORT_HEADERS];
+    const expectedHeaders = [...APP.import.supplier.headers];
     const headerRow = parsed[0].map((cell) => cell.trim().toLowerCase());
 
     if (!this.headersMatch(headerRow, expectedHeaders)) {
@@ -87,9 +85,9 @@ export class SuppliersImportService {
     }
 
     const dataRows = parsed.slice(1);
-    if (dataRows.length > SUPPLIER_IMPORT_MAX_ROWS) {
+    if (dataRows.length > APP.import.maxRows) {
       throw new AppError(ERRORS.IMPORT.ROW_LIMIT_EXCEEDED, {
-        details: { max: SUPPLIER_IMPORT_MAX_ROWS, received: dataRows.length },
+        details: { max: APP.import.maxRows, received: dataRows.length },
       });
     }
 
@@ -123,7 +121,7 @@ export class SuppliersImportService {
     await this.redisService.set(
       this.previewKey(tenantId, previewToken),
       JSON.stringify({ tenantId, userId, mode, rows } satisfies StoredSupplierImportPreview),
-      SUPPLIER_IMPORT_PREVIEW_TTL_SECONDS,
+      APP.import.previewTtlSeconds,
     );
 
     const valid = rows.filter((row) => row.status === 'OK').length;
@@ -131,7 +129,7 @@ export class SuppliersImportService {
 
     return {
       previewToken,
-      expiresInSeconds: SUPPLIER_IMPORT_PREVIEW_TTL_SECONDS,
+      expiresInSeconds: APP.import.previewTtlSeconds,
       summary: { total: rows.length, valid, errors },
       rows: rows.map((row) => ({
         line: row.line,

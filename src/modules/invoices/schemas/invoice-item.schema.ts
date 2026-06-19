@@ -38,3 +38,4 @@ export class InvoiceItem {
 
 export const InvoiceItemSchema = SchemaFactory.createForClass(InvoiceItem);
 InvoiceItemSchema.index({ tenant_id: 1, invoice_id: 1 });
+InvoiceItemSchema.index({ tenant_id: 1, created_at: -1 });

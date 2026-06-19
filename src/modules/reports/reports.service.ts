@@ -14,11 +14,10 @@ import {
 } from '../inventory/schemas/inventory-balance.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import {
-  REPORT_CACHE_TTL_SECONDS,
-  REPORT_TYPES,
-  ReportType,
+  APP,
   dashboardCacheKey,
-} from './constants/reports.constants';
+  ReportType,
+} from '../../shared/constants/app.constants';
 
 interface DateRange {
   from?: string;
@@ -84,7 +83,7 @@ export class ReportsService {
     await this.redisService.set(
       cacheKey,
       JSON.stringify(dashboard),
-      REPORT_CACHE_TTL_SECONDS,
+      APP.report.cacheTtlSeconds,
     );
 
     this.auditService.emit({
@@ -355,7 +354,7 @@ export class ReportsService {
     let header = '';
 
     switch (type) {
-      case REPORT_TYPES.REVENUE: {
+      case APP.report.types.REVENUE: {
         const revenue = await this.getRevenue(tenantId, range);
         header = 'date,revenue,orders';
         rows = revenue.daily.map((row) => ({
@@ -365,17 +364,17 @@ export class ReportsService {
         }));
         break;
       }
-      case REPORT_TYPES.TOP_PRODUCTS: {
+      case APP.report.types.TOP_PRODUCTS: {
         header = 'product_id,product_name,sku,quantity_sold,revenue';
         rows = await this.getTopProducts(tenantId, range);
         break;
       }
-      case REPORT_TYPES.LOW_STOCK: {
+      case APP.report.types.LOW_STOCK: {
         header = 'product_id,name,sku,available_quantity,minimum_stock';
         rows = await this.getLowStock(tenantId);
         break;
       }
-      case REPORT_TYPES.DEAD_STOCK: {
+      case APP.report.types.DEAD_STOCK: {
         header =
           'product_id,name,sku,available_quantity,stock_value,inactive_days';
         rows = await this.getDeadStock(tenantId, inactiveDays ?? 30);

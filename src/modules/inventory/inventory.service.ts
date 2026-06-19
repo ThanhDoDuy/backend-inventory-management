@@ -8,14 +8,14 @@ import {
 } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { DomainEventPublisher } from '../../infrastructure/queue/domain-event.publisher';
-import { DOMAIN_EVENTS } from '../../infrastructure/queue/queue.constants';
+import { APP } from '../../shared/constants/app.constants';
 import { RedisService } from '../../infrastructure/redis/redis.service';
 import { AppError, ERRORS } from '../../shared/errors';
+import { acquireLockWithRetry } from '../../shared/utils/redis-lock.util';
 import { ProductsService } from '../products/products.service';
 import { SettingsService } from '../settings/settings.service';
 import {
   AdjustmentReason,
-  INVENTORY_LOCK_TTL_SECONDS,
   InventoryReferenceType,
   InventoryTransactionType,
 } from './constants/inventory.enums';
@@ -137,6 +137,10 @@ export class InventoryService {
     referenceId: string,
     userId: string,
     session?: ClientSession,
+    options?: {
+      skipProductExistsCheck?: boolean;
+      allowNegativeStock?: boolean;
+    },
   ): Promise<InventoryTransactionDocument> {
     this.logger.step('InventoryService.stockOut', {
       tenantId,
@@ -154,12 +158,16 @@ export class InventoryService {
 
     return this.withProductLock(tenantId, productId, () =>
       this.runWithOptionalSession(session, async (activeSession) => {
-        await this.assertProductExists(tenantId, productId);
-        const allowNegative = await this.settingsService.getBoolean(
-          tenantId,
-          'inventory.allow_negative_stock',
-          false,
-        );
+        if (!options?.skipProductExistsCheck) {
+          await this.assertProductExists(tenantId, productId);
+        }
+        const allowNegative =
+          options?.allowNegativeStock ??
+          (await this.settingsService.getBoolean(
+            tenantId,
+            'inventory.allow_negative_stock',
+            false,
+          ));
         return this.applyMovement(
           {
             tenantId,
@@ -226,6 +234,61 @@ export class InventoryService {
     return this.toTransactionView(transaction);
   }
 
+  async checkLowStockAlerts(
+    tenantId: string,
+    productIds: string[],
+  ): Promise<void> {
+    const uniqueIds = [...new Set(productIds.filter(Boolean))];
+    if (uniqueIds.length === 0) {
+      return;
+    }
+
+    const enabled = await this.settingsService.isFeatureEnabled(
+      tenantId,
+      'enable_low_stock_alert',
+      true,
+    );
+    if (!enabled) {
+      return;
+    }
+
+    const [productMap, balanceMap, defaultThreshold] = await Promise.all([
+      this.productsService.findManyByIdsInTenant(tenantId, uniqueIds),
+      this.getBalanceMap(tenantId, uniqueIds),
+      this.settingsService.getNumber(
+        tenantId,
+        'inventory.low_stock_threshold',
+        20,
+      ),
+    ]);
+
+    for (const productId of uniqueIds) {
+      const product = productMap.get(productId);
+      if (!product) {
+        continue;
+      }
+
+      const availableQuantity = balanceMap.get(productId) ?? 0;
+      const minimumStock =
+        product.minimum_stock > 0 ? product.minimum_stock : defaultThreshold;
+
+      if (availableQuantity > minimumStock) {
+        continue;
+      }
+
+      await this.domainEventPublisher.publish({
+        type: APP.queue.domainEvents.INVENTORY_LOW_STOCK,
+        tenantId,
+        data: {
+          productId,
+          productName: product.name,
+          availableQuantity,
+          minimumStock,
+        },
+      });
+    }
+  }
+
   async checkLowStockAlert(tenantId: string, productId: string): Promise<void> {
     const enabled = await this.settingsService.isFeatureEnabled(
       tenantId,
@@ -266,7 +329,7 @@ export class InventoryService {
     }
 
     await this.domainEventPublisher.publish({
-      type: DOMAIN_EVENTS.INVENTORY_LOW_STOCK,
+      type: APP.queue.domainEvents.INVENTORY_LOW_STOCK,
       tenantId,
       data: {
         productId,
@@ -275,6 +338,34 @@ export class InventoryService {
         minimumStock,
       },
     });
+  }
+
+  async getBalanceMap(
+    tenantId: string,
+    productIds: string[],
+  ): Promise<Map<string, number>> {
+    const uniqueIds = [...new Set(productIds.filter(Boolean))];
+    const map = new Map<string, number>();
+
+    if (uniqueIds.length === 0) {
+      return map;
+    }
+
+    const balances = await this.balanceModel
+      .find({
+        tenant_id: new Types.ObjectId(tenantId),
+        product_id: {
+          $in: uniqueIds.map((productId) => new Types.ObjectId(productId)),
+        },
+      })
+      .select('product_id available_quantity')
+      .lean();
+
+    for (const balance of balances) {
+      map.set(balance.product_id.toString(), balance.available_quantity);
+    }
+
+    return map;
   }
 
   async getBalance(
@@ -587,19 +678,20 @@ export class InventoryService {
     fn: () => Promise<T>,
   ): Promise<T> {
     const key = this.lockKey(tenantId, productId);
-    const acquired = await this.redisService.acquireLock(
+    const handle = await acquireLockWithRetry(
+      this.redisService,
       key,
-      INVENTORY_LOCK_TTL_SECONDS,
+      APP.redis.lock.inventoryTtlSeconds,
     );
 
-    if (!acquired) {
+    if (!handle) {
       throw new AppError(ERRORS.INVENTORY.LOCK_ACQUISITION_FAILED);
     }
 
     try {
       return await fn();
     } finally {
-      await this.redisService.releaseLock(key);
+      await this.redisService.releaseLock(handle);
     }
   }
 

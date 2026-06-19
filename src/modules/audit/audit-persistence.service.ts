@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { AuditJobPayload } from '../../infrastructure/queue/queue.constants';
+import { AuditJobPayload } from '../../shared/constants/app.constants';
 import { AuditLog, AuditLogDocument } from './schemas/audit-log.schema';
 
 @Injectable()

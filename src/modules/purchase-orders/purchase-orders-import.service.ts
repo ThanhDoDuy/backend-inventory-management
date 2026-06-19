@@ -16,11 +16,7 @@ import { normalizePhone } from '../../shared/utils/phone.util';
 import { parseImportDate } from '../../shared/utils/import-date.util';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { Supplier, SupplierDocument } from '../suppliers/schemas/supplier.schema';
-import {
-  PO_IMPORT_HEADERS,
-  PO_IMPORT_MAX_ROWS,
-  PO_IMPORT_PREVIEW_TTL_SECONDS,
-} from './constants/po-import.constants';
+import { APP } from '../../shared/constants/app.constants';
 import { PoImportConfirmDto } from './dto/po-import.dto';
 import { PurchaseOrdersService } from './purchase-orders.service';
 
@@ -66,7 +62,7 @@ export class PurchaseOrdersImportService {
 
   getImportTemplateExcel(): Promise<Buffer> {
     return buildExcelBuffer(
-      [...PO_IMPORT_HEADERS],
+      [...APP.import.po.headers],
       [
         ['PO-001', '0903123456', 'MP-001', 40, 185000, '2026-06-25'],
         ['PO-001', '0903123456', 'MP-002', 35, 195000, '2026-06-25'],
@@ -96,7 +92,7 @@ export class PurchaseOrdersImportService {
       throw new AppError(ERRORS.IMPORT.INVALID_FORMAT);
     }
 
-    const expectedHeaders = [...PO_IMPORT_HEADERS];
+    const expectedHeaders = [...APP.import.po.headers];
     const headerRow = parsed[0].map((cell) => cell.trim().toLowerCase());
 
     if (!this.headersMatch(headerRow, expectedHeaders)) {
@@ -106,9 +102,9 @@ export class PurchaseOrdersImportService {
     }
 
     const dataRows = parsed.slice(1);
-    if (dataRows.length > PO_IMPORT_MAX_ROWS) {
+    if (dataRows.length > APP.import.maxRows) {
       throw new AppError(ERRORS.IMPORT.ROW_LIMIT_EXCEEDED, {
-        details: { max: PO_IMPORT_MAX_ROWS, received: dataRows.length },
+        details: { max: APP.import.maxRows, received: dataRows.length },
       });
     }
 
@@ -155,7 +151,7 @@ export class PurchaseOrdersImportService {
     await this.redisService.set(
       this.previewKey(tenantId, previewToken),
       JSON.stringify({ tenantId, userId, rows } satisfies StoredPoImportPreview),
-      PO_IMPORT_PREVIEW_TTL_SECONDS,
+      APP.import.previewTtlSeconds,
     );
 
     const validRows = rows.filter((row) => row.status === 'OK');
@@ -163,7 +159,7 @@ export class PurchaseOrdersImportService {
 
     return {
       previewToken,
-      expiresInSeconds: PO_IMPORT_PREVIEW_TTL_SECONDS,
+      expiresInSeconds: APP.import.previewTtlSeconds,
       summary: {
         total: rows.length,
         valid: validRows.length,

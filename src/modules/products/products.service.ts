@@ -4,7 +4,9 @@ import { Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { ProductStatus } from '../../shared/constants/business.enums';
 import { AppError, ERRORS } from '../../shared/errors';
-import { buildCsv, CSV_EXPORT_MAX_ROWS } from '../../shared/utils/csv.util';
+import { escapeRegex } from '../../shared/utils/regex.util';
+import { APP } from '../../shared/constants/app.constants';
+import { buildCsv } from '../../shared/utils/csv.util';
 import { buildExcelBuffer } from '../../shared/utils/excel.util';
 import { getProductImportColumnFormats } from '../../shared/constants/import-template-formats';
 import { PriceTiersService } from '../price-tiers/price-tiers.service';
@@ -40,6 +42,30 @@ export class ProductsService {
       .populate('category_id', 'name description');
   }
 
+  async findManyByIdsInTenant(
+    tenantId: string,
+    ids: string[],
+  ): Promise<Map<string, ProductDocument>> {
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    const map = new Map<string, ProductDocument>();
+
+    if (uniqueIds.length === 0) {
+      return map;
+    }
+
+    const products = await this.productModel.find({
+      tenant_id: new Types.ObjectId(tenantId),
+      _id: { $in: uniqueIds.map((id) => new Types.ObjectId(id)) },
+      is_deleted: false,
+    });
+
+    for (const product of products) {
+      map.set(product._id.toString(), product);
+    }
+
+    return map;
+  }
+
   async list(
     tenantId: string,
     page = 1,
@@ -68,12 +94,9 @@ export class ProductsService {
     if (status) {
       filter.status = status;
     }
-    if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { sku: { $regex: search, $options: 'i' } },
-        { barcode: { $regex: search, $options: 'i' } },
-      ];
+    const searchFilter = this.buildProductSearchFilter(search);
+    if (searchFilter) {
+      filter.$or = searchFilter;
     }
 
     const skip = (page - 1) * limit;
@@ -509,18 +532,31 @@ export class ProductsService {
     if (status) {
       filter.status = status;
     }
-    if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { sku: { $regex: search, $options: 'i' } },
-        { barcode: { $regex: search, $options: 'i' } },
-      ];
+    const searchFilter = this.buildProductSearchFilter(search);
+    if (searchFilter) {
+      filter.$or = searchFilter;
     }
 
     return this.productModel
       .find(filter)
       .populate('category_id', 'name')
       .sort({ sku: 1 })
-      .limit(CSV_EXPORT_MAX_ROWS);
+      .limit(APP.csv.exportMaxRows);
+  }
+
+  private buildProductSearchFilter(
+    search?: string,
+  ): Record<string, unknown>[] | null {
+    const trimmed = search?.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const escaped = escapeRegex(trimmed);
+    return [
+      { name: { $regex: escaped, $options: 'i' } },
+      { sku: { $regex: `^${escaped}`, $options: 'i' } },
+      { barcode: { $regex: `^${escaped}`, $options: 'i' } },
+    ];
   }
 }

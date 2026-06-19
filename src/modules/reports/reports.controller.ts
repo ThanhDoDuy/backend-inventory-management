@@ -4,7 +4,7 @@ import { CurrentUser } from '../../shared/decorators/current-user.decorator';
 import { RequirePermission } from '../../shared/decorators/require-permission.decorator';
 import { PERMISSIONS } from '../../shared/constants/permission.constants';
 import type { RequestUser } from '../../shared/interfaces/request-user.interface';
-import { REPORT_TYPES, ReportType } from './constants/reports.constants';
+import { APP, ReportType } from '../../shared/constants/app.constants';
 import { ReportsService } from './reports.service';
 
 @Controller('reports')
@@ -79,7 +79,7 @@ export class ReportsController {
       });
     }
 
-    const reportType = (type ?? REPORT_TYPES.REVENUE) as ReportType;
+    const reportType = (type ?? APP.report.types.REVENUE) as ReportType;
     const csv = await this.reportsService.exportCsv(
       user.tenantId,
       user.userId,

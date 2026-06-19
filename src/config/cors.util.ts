@@ -1,7 +1,4 @@
-export const LOCAL_CORS_ORIGINS = [
-  'http://localhost:3001',
-  'http://localhost:3000',
-];
+import { APP } from '../shared/constants/app.constants';
 
 /** Browser Origin never has a trailing slash; env may include one. */
 export function normalizeCorsOrigin(origin: string): string {
@@ -10,7 +7,7 @@ export function normalizeCorsOrigin(origin: string): string {
 
 export function parseCorsOrigins(raw?: string): string[] {
   if (!raw?.trim()) {
-    return LOCAL_CORS_ORIGINS;
+    return [...APP.cors.localOrigins];
   }
 
   const origins = raw
@@ -18,7 +15,7 @@ export function parseCorsOrigins(raw?: string): string[] {
     .map((origin) => normalizeCorsOrigin(origin))
     .filter(Boolean);
 
-  return origins.length > 0 ? origins : LOCAL_CORS_ORIGINS;
+  return origins.length > 0 ? origins : [...APP.cors.localOrigins];
 }
 
 export function isValidCorsOrigin(origin: string): boolean {

@@ -16,5 +16,3 @@ export enum AdjustmentReason {
   EXPIRED = 'EXPIRED',
   CORRECTION = 'CORRECTION',
 }
-
-export const INVENTORY_LOCK_TTL_SECONDS = 5;

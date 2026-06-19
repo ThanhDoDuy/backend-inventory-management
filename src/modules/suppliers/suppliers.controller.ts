@@ -21,9 +21,9 @@ import { PERMISSIONS } from '../../shared/constants/permission.constants';
 import { PartyStatus } from '../../shared/constants/business.enums';
 import type { RequestUser } from '../../shared/interfaces/request-user.interface';
 import {
-  SUPPLIER_IMPORT_MAX_FILE_BYTES,
+  APP,
   type SupplierImportMode,
-} from './constants/supplier-import.constants';
+} from '../../shared/constants/app.constants';
 import {
   CreateSupplierDto,
   DisableSupplierDto,
@@ -105,7 +105,7 @@ export class SuppliersController {
   @Post('import/preview')
   @RequirePermission(PERMISSIONS.SUPPLIERS.CREATE)
   @UseInterceptors(
-    FileInterceptor('file', { limits: { fileSize: SUPPLIER_IMPORT_MAX_FILE_BYTES } }),
+    FileInterceptor('file', { limits: { fileSize: APP.import.maxFileBytes } }),
   )
   previewImport(
     @CurrentUser() user: RequestUser,

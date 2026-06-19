@@ -4,7 +4,8 @@ import { Connection, Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { PartyStatus } from '../../shared/constants/business.enums';
 import { AppError, ERRORS } from '../../shared/errors';
-import { buildCsv, CSV_EXPORT_MAX_ROWS } from '../../shared/utils/csv.util';
+import { APP } from '../../shared/constants/app.constants';
+import { buildCsv } from '../../shared/utils/csv.util';
 import { buildExcelBuffer } from '../../shared/utils/excel.util';
 import { SUPPLIER_IMPORT_COLUMN_FORMATS } from '../../shared/constants/import-template-formats';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/supplier.dto';
@@ -387,6 +388,6 @@ export class SuppliersService {
     return this.supplierModel
       .find(filter)
       .sort({ name: 1 })
-      .limit(CSV_EXPORT_MAX_ROWS);
+      .limit(APP.csv.exportMaxRows);
   }
 }

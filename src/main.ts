@@ -3,7 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { AppModule } from './app.module';
-import { isCorsOriginAllowed, LOCAL_CORS_ORIGINS } from './config/cors.util';
+import { isCorsOriginAllowed, parseCorsOrigins } from './config/cors.util';
+import { APP } from './shared/constants/app.constants';
 import { AppError, ERRORS } from './shared/errors';
 
 async function bootstrap() {
@@ -12,7 +13,7 @@ async function bootstrap() {
   app.useLogger(logger);
 
   const configService = app.get(ConfigService);
-  const corsOrigins = configService.get<string[]>('corsOrigins') ?? LOCAL_CORS_ORIGINS;
+  const corsOrigins = configService.get<string[]>('corsOrigins') ?? [...APP.cors.localOrigins];
   const nodeEnv = configService.get<string>('nodeEnv');
 
   if (nodeEnv === 'production' && corsOrigins.every((o) => o.includes('localhost'))) {

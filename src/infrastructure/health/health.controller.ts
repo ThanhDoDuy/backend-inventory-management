@@ -4,7 +4,7 @@ import { Connection } from 'mongoose';
 import { AppLoggerService } from '../logger/app-logger.service';
 import { Public } from '../../shared/decorators/public.decorator';
 import { RedisService } from '../redis/redis.service';
-import { HEALTH_REDIS_CHECK_TTL_MS } from './health.constants';
+import { APP } from '../../shared/constants/app.constants';
 
 @Controller('health')
 export class HealthController {
@@ -58,7 +58,7 @@ export class HealthController {
 
     this.redisReadyCache = {
       value,
-      expiresAt: now + HEALTH_REDIS_CHECK_TTL_MS,
+      expiresAt: now + APP.redis.healthCheckTtlMs,
     };
     return value;
   }

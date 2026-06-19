@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { QueueService } from './queue.service';
-import { DomainEventPayload } from './queue.constants';
+import { DomainEventPayload } from '../../shared/constants/app.constants';
 
 @Injectable()
 export class DomainEventPublisher {

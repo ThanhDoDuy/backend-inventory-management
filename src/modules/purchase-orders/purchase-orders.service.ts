@@ -3,17 +3,17 @@ import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { DomainEventPublisher } from '../../infrastructure/queue/domain-event.publisher';
-import { DOMAIN_EVENTS } from '../../infrastructure/queue/queue.constants';
 import { RedisService } from '../../infrastructure/redis/redis.service';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS, AUDIT_MODULES } from '../audit/constants/audit.constants';
 import { PoStatus } from '../../shared/constants/business.enums';
+import { APP } from '../../shared/constants/app.constants';
 import { AppError, ERRORS } from '../../shared/errors';
+import { acquireLockWithRetry } from '../../shared/utils/redis-lock.util';
 import { InventoryReferenceType } from '../inventory/constants/inventory.enums';
 import { InventoryService } from '../inventory/inventory.service';
 import { ProductsService } from '../products/products.service';
 import { SuppliersService } from '../suppliers/suppliers.service';
-import { PO_LOCK_TTL_SECONDS } from './constants/purchase-order.constants';
 import {
   CancelPurchaseOrderDto,
   CreatePurchaseOrderDto,
@@ -416,7 +416,7 @@ export class PurchaseOrdersService {
         }
 
         void this.domainEventPublisher.publish({
-          type: DOMAIN_EVENTS.PO_RECEIVED,
+          type: APP.queue.domainEvents.PO_RECEIVED,
           tenantId,
           actorUserId: userId,
           data: {
@@ -593,19 +593,20 @@ export class PurchaseOrdersService {
     fn: () => Promise<T>,
   ): Promise<T> {
     const key = this.lockKey(tenantId, poId);
-    const acquired = await this.redisService.acquireLock(
+    const handle = await acquireLockWithRetry(
+      this.redisService,
       key,
-      PO_LOCK_TTL_SECONDS,
+      APP.redis.lock.poTtlSeconds,
     );
 
-    if (!acquired) {
+    if (!handle) {
       throw new AppError(ERRORS.PO.LOCK_ACQUISITION_FAILED);
     }
 
     try {
       return await fn();
     } finally {
-      await this.redisService.releaseLock(key);
+      await this.redisService.releaseLock(handle);
     }
   }
 

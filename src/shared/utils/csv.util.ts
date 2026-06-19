@@ -10,8 +10,6 @@ export function buildCsv(headers: string[], rows: unknown[][]): string {
   return UTF8_BOM + [headerLine, ...dataLines].join('\n');
 }
 
-export const CSV_EXPORT_MAX_ROWS = 10_000;
-
 export function parseCsv(content: string): string[][] {
   const text = content
     .replace(/^\uFEFF/, '')
