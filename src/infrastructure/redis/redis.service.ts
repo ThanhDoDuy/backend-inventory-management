@@ -5,7 +5,17 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 import Redis from 'ioredis';
+import type { RedisLockHandle } from './redis-lock.types';
+
+const RELEASE_LOCK_SCRIPT = `
+  if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+  else
+    return 0
+  end
+`;
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
@@ -70,13 +80,20 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return deleted;
   }
 
-  async acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
-    const result = await this.client.set(key, '1', 'EX', ttlSeconds, 'NX');
-    return result === 'OK';
+  async acquireLock(
+    key: string,
+    ttlSeconds: number,
+  ): Promise<RedisLockHandle | null> {
+    const token = randomUUID();
+    const result = await this.client.set(key, token, 'EX', ttlSeconds, 'NX');
+    if (result !== 'OK') {
+      return null;
+    }
+    return { key, token };
   }
 
-  async releaseLock(key: string): Promise<void> {
-    await this.client.del(key);
+  async releaseLock(handle: RedisLockHandle): Promise<void> {
+    await this.client.eval(RELEASE_LOCK_SCRIPT, 1, handle.key, handle.token);
   }
 
   async onModuleDestroy() {

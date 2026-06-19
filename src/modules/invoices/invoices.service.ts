@@ -3,7 +3,7 @@ import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { DomainEventPublisher } from '../../infrastructure/queue/domain-event.publisher';
-import { DOMAIN_EVENTS } from '../../infrastructure/queue/queue.constants';
+import { APP } from '../../shared/constants/app.constants';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS, AUDIT_MODULES } from '../audit/constants/audit.constants';
 import {
@@ -31,6 +31,9 @@ import { InvoiceItem, InvoiceItemDocument } from './schemas/invoice-item.schema'
 import { Invoice, InvoiceDocument } from './schemas/invoice.schema';
 import { Payment, PaymentDocument } from './schemas/payment.schema';
 import { Refund, RefundDocument } from './schemas/refund.schema';
+import { InvoiceSequenceService } from './invoice-sequence.service';
+import { ProductDocument } from '../products/schemas/product.schema';
+import { PriceTierDocument } from '../price-tiers/schemas/price-tier.schema';
 
 interface ResolvedLineItem {
   productId: string;
@@ -45,8 +48,6 @@ interface ResolvedLineItem {
 interface RefundedQuantityMap {
   [productId: string]: number;
 }
-
-const INVOICE_NUMBER_PAD = 4;
 
 @Injectable()
 export class InvoicesService {
@@ -70,6 +71,7 @@ export class InvoicesService {
     private rbacService: RbacService,
     private domainEventPublisher: DomainEventPublisher,
     private auditService: AuditService,
+    private invoiceSequenceService: InvoiceSequenceService,
     private readonly logger: AppLoggerService,
   ) {}
 
@@ -104,8 +106,19 @@ export class InvoicesService {
 
     await this.validateDiscountLimit(tenantId, roleId, discountPercent);
 
-    const lineItems = await this.resolveLineItems(tenantId, dto.items);
-    await this.assertSufficientStock(tenantId, lineItems);
+    const productIds = dto.items.map((item) => item.productId);
+    const [productMap, tierMap, allowNegativeStock] = await Promise.all([
+      this.productsService.findManyByIdsInTenant(tenantId, productIds),
+      this.priceTiersService.getTierMap(tenantId),
+      this.settingsService.getBoolean(
+        tenantId,
+        'inventory.allow_negative_stock',
+        false,
+      ),
+    ]);
+
+    const lineItems = this.resolveLineItems(dto.items, productMap, tierMap);
+    await this.assertSufficientStock(tenantId, lineItems, allowNegativeStock);
 
     const subtotal = this.roundMoney(
       lineItems.reduce((sum, item) => sum + item.lineTotal, 0),
@@ -124,7 +137,10 @@ export class InvoicesService {
     session.startTransaction();
 
     try {
-      const invoiceNumber = await this.generateInvoiceNumber(tenantId, session);
+      const invoiceNumber = await this.invoiceSequenceService.nextInvoiceNumber(
+        tenantId,
+        session,
+      );
       const tenantObjectId = new Types.ObjectId(tenantId);
       const userObjectId = new Types.ObjectId(userId);
 
@@ -192,6 +208,10 @@ export class InvoicesService {
           `${invoiceId}:${item.productId}:${item.priceTierCode}`,
           userId,
           session,
+          {
+            skipProductExistsCheck: true,
+            allowNegativeStock,
+          },
         );
       }
 
@@ -206,12 +226,10 @@ export class InvoicesService {
 
       await session.commitTransaction();
 
-      for (const item of lineItems) {
-        void this.inventoryService.checkLowStockAlert(tenantId, item.productId);
-      }
+      void this.inventoryService.checkLowStockAlerts(tenantId, productIds);
 
       void this.domainEventPublisher.publish({
-        type: DOMAIN_EVENTS.INVOICE_PAID,
+        type: APP.queue.domainEvents.INVOICE_PAID,
         tenantId,
         actorUserId: userId,
         data: {
@@ -648,18 +666,15 @@ export class InvoicesService {
     }
   }
 
-  private async resolveLineItems(
-    tenantId: string,
+  private resolveLineItems(
     items: CreateInvoiceDto['items'],
-  ): Promise<ResolvedLineItem[]> {
+    productMap: Map<string, ProductDocument>,
+    tierMap: Map<string, PriceTierDocument>,
+  ): ResolvedLineItem[] {
     const resolved: ResolvedLineItem[] = [];
-    const tierMap = await this.priceTiersService.getTierMap(tenantId);
 
     for (const item of items) {
-      const product = await this.productsService.findByIdInTenant(
-        tenantId,
-        item.productId,
-      );
+      const product = productMap.get(item.productId);
 
       if (!product) {
         throw new AppError(ERRORS.PRODUCT.NOT_FOUND, {
@@ -722,48 +737,37 @@ export class InvoicesService {
   private async assertSufficientStock(
     tenantId: string,
     lineItems: ResolvedLineItem[],
+    allowNegativeStock: boolean,
   ): Promise<void> {
-    const allowNegative = await this.settingsService.getBoolean(
-      tenantId,
-      'inventory.allow_negative_stock',
-      false,
-    );
-
-    if (allowNegative) {
+    if (allowNegativeStock) {
       return;
     }
 
+    const requiredByProduct = new Map<string, number>();
     for (const item of lineItems) {
-      const balance = await this.inventoryService.getBalance(
-        tenantId,
+      requiredByProduct.set(
         item.productId,
+        (requiredByProduct.get(item.productId) ?? 0) + item.quantity,
       );
+    }
 
-      const available =
-        Array.isArray(balance) ? 0 : balance.available_quantity;
+    const balanceMap = await this.inventoryService.getBalanceMap(
+      tenantId,
+      [...requiredByProduct.keys()],
+    );
 
-      if (available < item.quantity) {
+    for (const [productId, required] of requiredByProduct) {
+      const available = balanceMap.get(productId) ?? 0;
+      if (available < required) {
         throw new AppError(ERRORS.INVENTORY.INSUFFICIENT_STOCK, {
           details: {
-            productId: item.productId,
+            productId,
             available_quantity: available,
-            requested: item.quantity,
+            requested: required,
           },
         });
       }
     }
-  }
-
-  private async generateInvoiceNumber(
-    tenantId: string,
-    session: ClientSession,
-  ): Promise<string> {
-    const count = await this.invoiceModel.countDocuments(
-      { tenant_id: new Types.ObjectId(tenantId) },
-      { session },
-    );
-
-    return `INV${String(count + 1).padStart(INVOICE_NUMBER_PAD, '0')}`;
   }
 
   private async getRefundedQuantities(
@@ -795,16 +799,14 @@ export class InvoicesService {
     tenantId: string,
     productIds: string[],
   ): Promise<Map<string, string>> {
+    const productMap = await this.productsService.findManyByIdsInTenant(
+      tenantId,
+      productIds,
+    );
     const map = new Map<string, string>();
 
-    for (const productId of productIds) {
-      const product = await this.productsService.findByIdInTenant(
-        tenantId,
-        productId,
-      );
-      if (product) {
-        map.set(productId, product.name);
-      }
+    for (const [productId, product] of productMap) {
+      map.set(productId, product.name);
     }
 
     return map;

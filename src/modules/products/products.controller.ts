@@ -15,8 +15,10 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import type { ProductImportMode } from './constants/product-import.constants';
-import { PRODUCT_IMPORT_MAX_FILE_BYTES } from './constants/product-import.constants';
+import {
+  APP,
+  type ProductImportMode,
+} from '../../shared/constants/app.constants';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator';
 import { RequirePermission } from '../../shared/decorators/require-permission.decorator';
 import { ProductStatus } from '../../shared/constants/business.enums';
@@ -103,7 +105,7 @@ export class ProductsController {
   @Post('import/preview')
   @RequirePermission(PERMISSIONS.PRODUCTS.CREATE)
   @UseInterceptors(
-    FileInterceptor('file', { limits: { fileSize: PRODUCT_IMPORT_MAX_FILE_BYTES } }),
+    FileInterceptor('file', { limits: { fileSize: APP.import.maxFileBytes } }),
   )
   previewImport(
     @CurrentUser() user: RequestUser,

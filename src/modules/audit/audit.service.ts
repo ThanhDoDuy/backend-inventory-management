@@ -4,7 +4,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { QueueService } from '../../infrastructure/queue/queue.service';
-import { AuditJobPayload } from '../../infrastructure/queue/queue.constants';
+import { AuditJobPayload } from '../../shared/constants/app.constants';
 import { AppError, ERRORS } from '../../shared/errors';
 import { SECURITY_AUDIT_ACTIONS } from './constants/audit.constants';
 import { AuditPersistenceService } from './audit-persistence.service';

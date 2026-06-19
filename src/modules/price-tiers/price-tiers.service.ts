@@ -5,12 +5,7 @@ import { AppLoggerService } from '../../infrastructure/logger/app-logger.service
 import { AppError, ERRORS } from '../../shared/errors';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { Tenant, TenantDocument } from '../tenants/schemas/tenant.schema';
-import {
-  DEFAULT_PRICE_TIERS,
-  MAX_CUSTOM_PRICE_TIERS,
-  RETAIL_TIER_CODE,
-  SYSTEM_PRICE_TIER_CODES,
-} from './constants/default-price-tiers';
+import { APP } from '../../shared/constants/app.constants';
 import { CreatePriceTierDto, UpdatePriceTierDto } from './dto/price-tier.dto';
 import { PriceTier, PriceTierDocument } from './schemas/price-tier.schema';
 
@@ -30,7 +25,7 @@ export class PriceTiersService implements OnApplicationBootstrap {
   }
 
   async seedForTenant(tenantId: string): Promise<void> {
-    for (const tier of DEFAULT_PRICE_TIERS) {
+    for (const tier of APP.priceTier.defaultTiers) {
       await this.priceTierModel.updateOne(
         {
           tenant_id: new Types.ObjectId(tenantId),
@@ -68,7 +63,7 @@ export class PriceTiersService implements OnApplicationBootstrap {
   }
 
   async createCustom(tenantId: string, dto: CreatePriceTierDto) {
-    if (SYSTEM_PRICE_TIER_CODES.includes(dto.code as (typeof SYSTEM_PRICE_TIER_CODES)[number])) {
+    if (APP.priceTier.systemCodes.includes(dto.code as (typeof APP.priceTier.systemCodes)[number])) {
       throw new AppError(ERRORS.PRICE_TIER.SYSTEM_PROTECTED);
     }
 
@@ -78,7 +73,7 @@ export class PriceTiersService implements OnApplicationBootstrap {
       is_active: true,
     });
 
-    if (customCount >= MAX_CUSTOM_PRICE_TIERS) {
+    if (customCount >= APP.priceTier.maxCustom) {
       throw new AppError(ERRORS.PRICE_TIER.LIMIT_REACHED);
     }
 
@@ -148,7 +143,7 @@ export class PriceTiersService implements OnApplicationBootstrap {
     sellingPrice: number,
     allowedCodes: Set<string>,
   ): Record<string, number> {
-    const retail = prices?.[RETAIL_TIER_CODE] ?? sellingPrice;
+    const retail = prices?.[APP.priceTier.retailCode] ?? sellingPrice;
     const normalized: Record<string, number> = {
       WHOLESALE: prices?.WHOLESALE ?? retail,
       VIP: prices?.VIP ?? retail,
@@ -156,7 +151,7 @@ export class PriceTiersService implements OnApplicationBootstrap {
     };
 
     for (const [code, amount] of Object.entries(prices ?? {})) {
-      if (SYSTEM_PRICE_TIER_CODES.includes(code as (typeof SYSTEM_PRICE_TIER_CODES)[number])) {
+      if (APP.priceTier.systemCodes.includes(code as (typeof APP.priceTier.systemCodes)[number])) {
         continue;
       }
       if (allowedCodes.has(code)) {
@@ -165,7 +160,7 @@ export class PriceTiersService implements OnApplicationBootstrap {
     }
 
     for (const code of allowedCodes) {
-      if (!SYSTEM_PRICE_TIER_CODES.includes(code as (typeof SYSTEM_PRICE_TIER_CODES)[number])) {
+      if (!APP.priceTier.systemCodes.includes(code as (typeof APP.priceTier.systemCodes)[number])) {
         if (normalized[code] === undefined) {
           normalized[code] = retail;
         }
@@ -192,7 +187,7 @@ export class PriceTiersService implements OnApplicationBootstrap {
       }
     }
 
-    for (const code of SYSTEM_PRICE_TIER_CODES) {
+    for (const code of APP.priceTier.systemCodes) {
       if (prices[code] === undefined) {
         throw new AppError(ERRORS.PRICE_TIER.MISSING_SYSTEM_PRICE, {
           details: { code },
@@ -205,7 +200,7 @@ export class PriceTiersService implements OnApplicationBootstrap {
     selling_price: number;
     prices?: Record<string, number>;
   }): Record<string, number> {
-    const retail = product.prices?.[RETAIL_TIER_CODE] ?? product.selling_price;
+    const retail = product.prices?.[APP.priceTier.retailCode] ?? product.selling_price;
     const resolved: Record<string, number> = {
       WHOLESALE: product.prices?.WHOLESALE ?? retail,
       VIP: product.prices?.VIP ?? retail,

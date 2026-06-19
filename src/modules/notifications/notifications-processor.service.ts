@@ -3,13 +3,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import {
-  DOMAIN_EVENTS,
+  APP,
   DomainEventPayload,
-} from '../../infrastructure/queue/queue.constants';
+} from '../../shared/constants/app.constants';
 import { Role as RoleCode } from '../../shared/constants/roles.enum';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { Role, RoleDocument } from '../rbac/schemas/role.schema';
-import { NOTIFICATION_TYPES } from './constants/notification.constants';
 import { Notification, NotificationDocument } from './schemas/notification.schema';
 
 @Injectable()
@@ -29,13 +28,13 @@ export class NotificationsProcessorService {
     });
 
     switch (event.type) {
-      case DOMAIN_EVENTS.INVENTORY_LOW_STOCK:
+      case APP.queue.domainEvents.INVENTORY_LOW_STOCK:
         await this.handleLowStock(event);
         break;
-      case DOMAIN_EVENTS.PO_RECEIVED:
+      case APP.queue.domainEvents.PO_RECEIVED:
         await this.handlePoReceived(event);
         break;
-      case DOMAIN_EVENTS.INVOICE_PAID:
+      case APP.queue.domainEvents.INVOICE_PAID:
         await this.handleInvoicePaid(event);
         break;
       default:
@@ -57,7 +56,7 @@ export class NotificationsProcessorService {
 
     await this.createForUsers(recipients, {
       tenantId: event.tenantId,
-      type: NOTIFICATION_TYPES.LOW_STOCK,
+      type: APP.notification.types.LOW_STOCK,
       title: 'Low stock alert',
       message: `${productName} is below minimum stock (${availableQuantity} / ${minimumStock})`,
       payload: event.data,
@@ -73,7 +72,7 @@ export class NotificationsProcessorService {
 
     await this.createForUsers(recipients, {
       tenantId: event.tenantId,
-      type: NOTIFICATION_TYPES.PO_RECEIVED,
+      type: APP.notification.types.PO_RECEIVED,
       title: 'Purchase order received',
       message: `${poNumber} has been received`,
       payload: event.data,
@@ -95,7 +94,7 @@ export class NotificationsProcessorService {
 
     await this.createForUsers([...recipientIds], {
       tenantId: event.tenantId,
-      type: NOTIFICATION_TYPES.INVOICE_PAID,
+      type: APP.notification.types.INVOICE_PAID,
       title: 'Invoice paid',
       message: `Invoice ${invoiceNumber} has been paid`,
       payload: event.data,

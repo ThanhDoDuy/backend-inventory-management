@@ -1,5 +1,5 @@
 import { IsIn, IsOptional, IsString } from 'class-validator';
-import type { ProductImportMode } from '../constants/product-import.constants';
+import type { ProductImportMode } from '../../../shared/constants/app.constants';
 
 export class ImportConfirmDto {
   @IsString()

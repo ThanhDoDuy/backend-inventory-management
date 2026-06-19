@@ -12,11 +12,9 @@ import {
 } from '../../shared/utils/import-file.util';
 import { CategoriesService } from './categories.service';
 import {
-  CATEGORY_IMPORT_DESCRIPTION,
-  PRODUCT_IMPORT_MAX_ROWS,
-  PRODUCT_IMPORT_PREVIEW_TTL_SECONDS,
+  APP,
   type ProductImportMode,
-} from './constants/product-import.constants';
+} from '../../shared/constants/app.constants';
 import { ImportConfirmDto } from './dto/product-import.dto';
 import { PriceTiersService } from '../price-tiers/price-tiers.service';
 import { Product, ProductDocument } from './schemas/product.schema';
@@ -98,9 +96,9 @@ export class ProductsImportService {
     }
 
     const dataRows = parsed.slice(1);
-    if (dataRows.length > PRODUCT_IMPORT_MAX_ROWS) {
+    if (dataRows.length > APP.import.maxRows) {
       throw new AppError(ERRORS.IMPORT.ROW_LIMIT_EXCEEDED, {
-        details: { max: PRODUCT_IMPORT_MAX_ROWS, received: dataRows.length },
+        details: { max: APP.import.maxRows, received: dataRows.length },
       });
     }
 
@@ -133,7 +131,7 @@ export class ProductsImportService {
     await this.redisService.set(
       this.previewKey(tenantId, previewToken),
       JSON.stringify(payload),
-      PRODUCT_IMPORT_PREVIEW_TTL_SECONDS,
+      APP.import.previewTtlSeconds,
     );
 
     const valid = rows.filter((row) => row.status === 'OK').length;
@@ -146,7 +144,7 @@ export class ProductsImportService {
 
     return {
       previewToken,
-      expiresInSeconds: PRODUCT_IMPORT_PREVIEW_TTL_SECONDS,
+      expiresInSeconds: APP.import.previewTtlSeconds,
       summary: {
         total: rows.length,
         valid,
@@ -195,7 +193,7 @@ export class ProductsImportService {
           const category = await this.categoriesService.findOrCreateForImport(
             tenantId,
             row.data.categoryName,
-            CATEGORY_IMPORT_DESCRIPTION,
+            APP.import.product.categoryDescription,
           );
           categoryId = category._id.toString();
         }

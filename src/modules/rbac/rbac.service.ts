@@ -9,11 +9,10 @@ import { Role as RoleCode } from '../../shared/constants/roles.enum';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { SEED_ROLES } from './constants/rbac-seed.data';
 import {
-  RBAC_CACHE_TTL_SECONDS,
-  RBAC_PERMISSIONS_CACHE_KEY,
+  APP,
   rbacRoleCacheKey,
   rbacTenantRolesCachePattern,
-} from './constants/rbac-cache.constants';
+} from '../../shared/constants/app.constants';
 import { CreateRoleDto, UpdateRoleDto } from './dto/role.dto';
 import { Permission, PermissionDocument } from './schemas/permission.schema';
 import { Role, RoleDocument } from './schemas/role.schema';
@@ -59,7 +58,7 @@ export class RbacService {
   }
 
   async listPermissions() {
-    const cached = await this.redisService.get(RBAC_PERMISSIONS_CACHE_KEY);
+    const cached = await this.redisService.get(APP.rbac.permissionsCacheKey);
     if (cached) {
       return JSON.parse(cached) as Permission[];
     }
@@ -70,9 +69,9 @@ export class RbacService {
       .lean();
 
     await this.redisService.set(
-      RBAC_PERMISSIONS_CACHE_KEY,
+      APP.rbac.permissionsCacheKey,
       JSON.stringify(permissions),
-      RBAC_CACHE_TTL_SECONDS,
+      APP.rbac.cacheTtlSeconds,
     );
 
     return permissions;
@@ -340,7 +339,7 @@ export class RbacService {
     await this.redisService.set(
       cacheKey,
       JSON.stringify(payload),
-      RBAC_CACHE_TTL_SECONDS,
+      APP.rbac.cacheTtlSeconds,
     );
 
     return payload;
@@ -358,7 +357,7 @@ export class RbacService {
     await this.redisService.set(
       rbacRoleCacheKey(tenantId, role._id.toString()),
       JSON.stringify(payload),
-      RBAC_CACHE_TTL_SECONDS,
+      APP.rbac.cacheTtlSeconds,
     );
   }
 
@@ -370,7 +369,7 @@ export class RbacService {
   }
 
   private async clearPermissionsCache(): Promise<boolean> {
-    await this.redisService.del(RBAC_PERMISSIONS_CACHE_KEY);
+    await this.redisService.del(APP.rbac.permissionsCacheKey);
     return true;
   }
 
@@ -391,7 +390,7 @@ export class RbacService {
             isWildcard: role.is_wildcard,
             permissionCodes: role.permission_codes,
           } satisfies RoleCachePayload),
-          RBAC_CACHE_TTL_SECONDS,
+          APP.rbac.cacheTtlSeconds,
         ),
       ),
     );

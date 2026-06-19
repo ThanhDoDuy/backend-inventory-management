@@ -18,7 +18,7 @@ import { RequirePermission } from '../../shared/decorators/require-permission.de
 import { PoStatus } from '../../shared/constants/business.enums';
 import { PERMISSIONS } from '../../shared/constants/permission.constants';
 import type { RequestUser } from '../../shared/interfaces/request-user.interface';
-import { PO_IMPORT_MAX_FILE_BYTES } from './constants/po-import.constants';
+import { APP } from '../../shared/constants/app.constants';
 import {
   CancelPurchaseOrderDto,
   CreatePurchaseOrderDto,
@@ -54,7 +54,7 @@ export class PurchaseOrdersController {
   @Post('import/preview')
   @RequirePermission(PERMISSIONS.PO.CREATE)
   @UseInterceptors(
-    FileInterceptor('file', { limits: { fileSize: PO_IMPORT_MAX_FILE_BYTES } }),
+    FileInterceptor('file', { limits: { fileSize: APP.import.maxFileBytes } }),
   )
   previewImport(
     @CurrentUser() user: RequestUser,
