@@ -158,6 +158,38 @@ export const ERRORS = {
       httpStatus: HttpStatus.CONFLICT,
     },
   },
+  PRODUCT_IMAGE: {
+    NOT_FOUND: {
+      errorCode: 6050,
+      message: 'Product image not found',
+      httpStatus: HttpStatus.NOT_FOUND,
+    },
+    LIMIT_EXCEEDED: {
+      errorCode: 6051,
+      message: 'Maximum number of product images reached',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    INVALID_ASSET: {
+      errorCode: 6052,
+      message: 'Invalid or unauthorized image asset',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    },
+    NOT_CONFIGURED: {
+      errorCode: 6053,
+      message: 'Image upload is not configured on this server',
+      httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+    },
+    CLOUDINARY_ERROR: {
+      errorCode: 6054,
+      message: 'Cloudinary operation failed',
+      httpStatus: HttpStatus.BAD_GATEWAY,
+    },
+    UNAUTHORIZED_ASSET: {
+      errorCode: 6055,
+      message: 'Image asset does not belong to this store or product',
+      httpStatus: HttpStatus.FORBIDDEN,
+    },
+  },
   CATEGORY: {
     NOT_FOUND: {
       errorCode: 6100,

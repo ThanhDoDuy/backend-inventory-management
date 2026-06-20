@@ -22,6 +22,10 @@ export const envValidationSchema = Joi.object({
   EMAIL_FROM: Joi.string().optional().allow(''),
   FRONTEND_URL: Joi.string().uri().optional(),
   PASSWORD_RESET_EXPIRES_MINUTES: Joi.number().integer().min(1).max(60).default(15),
+  CLOUDINARY_CLOUD_NAME: Joi.string().optional().allow(''),
+  CLOUDINARY_API_KEY: Joi.string().optional().allow(''),
+  CLOUDINARY_API_SECRET: Joi.string().optional().allow(''),
+  CLOUDINARY_FOLDER_PREFIX: Joi.string().default('poos'),
   CORS_ORIGIN: Joi.string()
     .optional()
     .allow('')

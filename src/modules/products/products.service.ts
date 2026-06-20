@@ -19,6 +19,7 @@ import {
   InventoryBalanceDocument,
 } from '../inventory/schemas/inventory-balance.schema';
 import { Product, ProductDocument } from './schemas/product.schema';
+import { ProductImagesService } from './product-images.service';
 
 @Injectable()
 export class ProductsService {
@@ -28,6 +29,7 @@ export class ProductsService {
     private inventoryBalanceModel: Model<InventoryBalanceDocument>,
     private readonly categoriesService: CategoriesService,
     private readonly priceTiersService: PriceTiersService,
+    private readonly productImagesService: ProductImagesService,
     private readonly logger: AppLoggerService,
   ) {}
 
@@ -296,6 +298,7 @@ export class ProductsService {
       throw new AppError(ERRORS.PRODUCT.NOT_FOUND);
     }
 
+    this.productImagesService.cascadeSoftDeleteImages(product);
     product.is_deleted = true;
     product.deleted_at = new Date();
     await product.save();
@@ -408,6 +411,7 @@ export class ProductsService {
       prices: this.priceTiersService.resolveProductPrices(product),
       minimum_stock: product.minimum_stock,
       image_url: product.image_url,
+      images: this.productImagesService.buildImagesForProductResponse(product),
       status: product.status,
       stock,
       created_at: product.created_at,

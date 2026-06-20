@@ -72,6 +72,14 @@ export const APP = {
     },
   },
 
+  productImage: {
+    maxCount: 10,
+    maxBytes: 5 * 1024 * 1024,
+    allowedFormats: ['jpg', 'jpeg', 'png', 'webp', 'avif'] as const,
+    incomingTransformation: 'c_limit,w_1200,h_1200/q_auto:good',
+    secureUrlHost: 'res.cloudinary.com',
+  },
+
   report: {
     cacheTtlSeconds: 300,
     types: {

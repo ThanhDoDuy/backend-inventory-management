@@ -13,6 +13,7 @@ import { LoggerModule } from './infrastructure/logger/logger.module';
 import { RequestIdMiddleware } from './infrastructure/logger/request-id.middleware';
 import { LoggingInterceptor } from './infrastructure/logger/logging.interceptor';
 import { RedisModule } from './infrastructure/redis/redis.module';
+import { CloudinaryModule } from './infrastructure/cloudinary/cloudinary.module';
 import { QueueModule } from './infrastructure/queue/queue.module';
 import { HealthModule } from './infrastructure/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -57,6 +58,7 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
       }),
     }),
     RedisModule,
+    CloudinaryModule,
     HealthModule,
     AuditModule,
     AuthModule,

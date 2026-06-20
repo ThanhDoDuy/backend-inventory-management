@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { ProductStatus } from '../../../shared/constants/business.enums';
+import { ProductImage, ProductImageSchema } from './product-image.schema';
 
 export type ProductDocument = HydratedDocument<Product>;
 
@@ -43,6 +44,9 @@ export class Product {
   @Prop({ default: '' })
   image_url: string;
 
+  @Prop({ type: [ProductImageSchema], default: [] })
+  images: ProductImage[];
+
   @Prop({ enum: ProductStatus, default: ProductStatus.ACTIVE })
   status: ProductStatus;
 
@@ -67,4 +71,8 @@ ProductSchema.index(
 ProductSchema.index(
   { tenant_id: 1, barcode: 1 },
   { unique: true, sparse: true, partialFilterExpression: { is_deleted: false } },
+);
+ProductSchema.index(
+  { tenant_id: 1, 'images.public_id': 1 },
+  { sparse: true },
 );
