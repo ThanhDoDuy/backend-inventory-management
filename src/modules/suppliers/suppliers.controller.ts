@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Header,
   Param,
   Patch,
   Post,
@@ -75,31 +74,35 @@ export class SuppliersController {
 
   @Get('export')
   @RequirePermission(PERMISSIONS.SUPPLIERS.VIEW)
-  @Header('Content-Type', 'text/csv; charset=utf-8')
   async export(
     @CurrentUser() user: RequestUser,
     @Res() res: Response,
     @Query('format') format?: string,
     @Query('search') search?: string,
     @Query('status') status?: PartyStatus,
+    @Query('all') all?: string,
   ) {
-    if (format && format !== 'csv') {
+    if (format && format !== 'xlsx') {
       return res.status(400).json({
         success: false,
-        message: 'Only CSV export is supported',
+        message: 'Only Excel (.xlsx) export is supported',
       });
     }
 
-    const csv = await this.suppliersService.exportCsv(
-      user.tenantId,
+    const buffer = await this.suppliersService.exportExcel(user.tenantId, {
       search,
       status,
+      all: all === 'true',
+    });
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
     res.setHeader(
       'Content-Disposition',
-      'attachment; filename="suppliers-export.csv"',
+      'attachment; filename="suppliers-export.xlsx"',
     );
-    return res.send(csv);
+    return res.send(buffer);
   }
 
   @Post('import/preview')

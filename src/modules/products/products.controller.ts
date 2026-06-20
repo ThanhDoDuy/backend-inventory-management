@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Header,
   Param,
   Patch,
   Post,
@@ -73,7 +72,6 @@ export class ProductsController {
 
   @Get('export')
   @RequirePermission(PERMISSIONS.PRODUCTS.VIEW)
-  @Header('Content-Type', 'text/csv; charset=utf-8')
   async export(
     @CurrentUser() user: RequestUser,
     @Res() res: Response,
@@ -81,25 +79,30 @@ export class ProductsController {
     @Query('search') search?: string,
     @Query('category_id') categoryId?: string,
     @Query('status') status?: ProductStatus,
+    @Query('all') all?: string,
   ) {
-    if (format && format !== 'csv') {
+    if (format && format !== 'xlsx') {
       return res.status(400).json({
         success: false,
-        message: 'Only CSV export is supported',
+        message: 'Only Excel (.xlsx) export is supported',
       });
     }
 
-    const csv = await this.productsService.exportCsv(
-      user.tenantId,
+    const buffer = await this.productsService.exportExcel(user.tenantId, {
       search,
       categoryId,
       status,
+      all: all === 'true',
+    });
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
     res.setHeader(
       'Content-Disposition',
-      'attachment; filename="products-export.csv"',
+      'attachment; filename="products-export.xlsx"',
     );
-    return res.send(csv);
+    return res.send(buffer);
   }
 
   @Post('import/preview')

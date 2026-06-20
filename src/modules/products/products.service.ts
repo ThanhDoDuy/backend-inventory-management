@@ -6,7 +6,6 @@ import { ProductStatus } from '../../shared/constants/business.enums';
 import { AppError, ERRORS } from '../../shared/errors';
 import { escapeRegex } from '../../shared/utils/regex.util';
 import { APP } from '../../shared/constants/app.constants';
-import { buildCsv } from '../../shared/utils/csv.util';
 import { buildExcelBuffer } from '../../shared/utils/excel.util';
 import { getProductImportColumnFormats } from '../../shared/constants/import-template-formats';
 import { PriceTiersService } from '../price-tiers/price-tiers.service';
@@ -429,20 +428,18 @@ export class ProductsService {
     );
   }
 
-  async exportCsv(
+  async exportExcel(
     tenantId: string,
-    search?: string,
-    categoryId?: string,
-    status?: ProductStatus,
-  ): Promise<string> {
+    options?: {
+      search?: string;
+      categoryId?: string;
+      status?: ProductStatus;
+      all?: boolean;
+    },
+  ): Promise<Buffer> {
     const tiers = await this.priceTiersService.list(tenantId, true);
     const headers = this.getProductCsvHeaders(tiers);
-    const products = await this.findProductsForExport(
-      tenantId,
-      search,
-      categoryId,
-      status,
-    );
+    const products = await this.findProductsForExport(tenantId, options);
 
     const rows = products.map((product) => {
       const prices = this.priceTiersService.resolveProductPrices(product);
@@ -463,7 +460,10 @@ export class ProductsService {
       ];
     });
 
-    return buildCsv(headers, rows);
+    return buildExcelBuffer(headers, rows, {
+      sheetName: 'Products',
+      columnFormats: getProductImportColumnFormats(headers),
+    });
   }
 
   async getImportTemplateExcel(tenantId: string): Promise<Buffer> {
@@ -517,24 +517,29 @@ export class ProductsService {
 
   private async findProductsForExport(
     tenantId: string,
-    search?: string,
-    categoryId?: string,
-    status?: ProductStatus,
+    options?: {
+      search?: string;
+      categoryId?: string;
+      status?: ProductStatus;
+      all?: boolean;
+    },
   ): Promise<ProductDocument[]> {
     const filter: Record<string, unknown> = {
       tenant_id: new Types.ObjectId(tenantId),
       is_deleted: false,
     };
 
-    if (categoryId) {
-      filter.category_id = new Types.ObjectId(categoryId);
-    }
-    if (status) {
-      filter.status = status;
-    }
-    const searchFilter = this.buildProductSearchFilter(search);
-    if (searchFilter) {
-      filter.$or = searchFilter;
+    if (!options?.all) {
+      if (options?.categoryId) {
+        filter.category_id = new Types.ObjectId(options.categoryId);
+      }
+      if (options?.status) {
+        filter.status = options.status;
+      }
+      const searchFilter = this.buildProductSearchFilter(options?.search);
+      if (searchFilter) {
+        filter.$or = searchFilter;
+      }
     }
 
     return this.productModel

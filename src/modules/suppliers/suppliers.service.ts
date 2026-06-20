@@ -5,7 +5,6 @@ import { AppLoggerService } from '../../infrastructure/logger/app-logger.service
 import { PartyStatus } from '../../shared/constants/business.enums';
 import { AppError, ERRORS } from '../../shared/errors';
 import { APP } from '../../shared/constants/app.constants';
-import { buildCsv } from '../../shared/utils/csv.util';
 import { buildExcelBuffer } from '../../shared/utils/excel.util';
 import { SUPPLIER_IMPORT_COLUMN_FORMATS } from '../../shared/constants/import-template-formats';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/supplier.dto';
@@ -328,12 +327,15 @@ export class SuppliersService {
     'status',
   ] as const;
 
-  async exportCsv(
+  async exportExcel(
     tenantId: string,
-    search?: string,
-    status?: PartyStatus,
-  ): Promise<string> {
-    const suppliers = await this.findSuppliersForExport(tenantId, search, status);
+    options?: {
+      search?: string;
+      status?: PartyStatus;
+      all?: boolean;
+    },
+  ): Promise<Buffer> {
+    const suppliers = await this.findSuppliersForExport(tenantId, options);
     const rows = suppliers.map((supplier) => [
       supplier.name,
       supplier.phone,
@@ -343,7 +345,14 @@ export class SuppliersService {
       supplier.status,
     ]);
 
-    return buildCsv([...SuppliersService.SUPPLIER_CSV_HEADERS], rows);
+    return buildExcelBuffer(
+      [...SuppliersService.SUPPLIER_CSV_HEADERS],
+      rows,
+      {
+        sheetName: 'Suppliers',
+        columnFormats: SUPPLIER_IMPORT_COLUMN_FORMATS,
+      },
+    );
   }
 
   async getImportTemplateExcel(): Promise<Buffer> {
@@ -365,24 +374,29 @@ export class SuppliersService {
 
   private async findSuppliersForExport(
     tenantId: string,
-    search?: string,
-    status?: PartyStatus,
+    options?: {
+      search?: string;
+      status?: PartyStatus;
+      all?: boolean;
+    },
   ): Promise<SupplierDocument[]> {
     const filter: Record<string, unknown> = {
       tenant_id: new Types.ObjectId(tenantId),
       is_deleted: false,
     };
 
-    if (status) {
-      filter.status = status;
-    }
+    if (!options?.all) {
+      if (options?.status) {
+        filter.status = options.status;
+      }
 
-    if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-      ];
+      if (options?.search) {
+        filter.$or = [
+          { name: { $regex: options.search, $options: 'i' } },
+          { phone: { $regex: options.search, $options: 'i' } },
+          { email: { $regex: options.search, $options: 'i' } },
+        ];
+      }
     }
 
     return this.supplierModel
