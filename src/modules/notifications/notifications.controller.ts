@@ -20,7 +20,7 @@ export class NotificationsController {
   ) {
     return this.notificationsService.list(user.tenantId, user.userId, {
       page: page ? parseInt(page, 10) : 1,
-      limit: limit ? parseInt(limit, 10) : 20,
+      limit: limit ? parseInt(limit, 10) : 10,
       unread: unread === 'true',
       type,
     });

@@ -32,7 +32,7 @@ export class AuditController {
   ) {
     return this.auditService.list(user.tenantId, {
       page: page ? parseInt(page, 10) : 1,
-      limit: limit ? parseInt(limit, 10) : 50,
+      limit: limit ? parseInt(limit, 10) : 10,
       userId,
       action,
       module,

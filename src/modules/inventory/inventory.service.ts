@@ -12,7 +12,7 @@ import { APP } from '../../shared/constants/app.constants';
 import { RedisService } from '../../infrastructure/redis/redis.service';
 import { AppError, ERRORS } from '../../shared/errors';
 import { buildCsv } from '../../shared/utils/csv.util';
-import { escapeRegex } from '../../shared/utils/regex.util';
+import { applySearchTextFilter } from '../../shared/utils/search.util';
 import { acquireLockWithRetry } from '../../shared/utils/redis-lock.util';
 import { ProductsService } from '../products/products.service';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
@@ -452,7 +452,7 @@ export class InventoryService {
 
     const page = filters.page && filters.page > 0 ? filters.page : 1;
     const limit =
-      filters.limit && filters.limit > 0 ? Math.min(filters.limit, 100) : 20;
+      filters.limit && filters.limit > 0 ? Math.min(filters.limit, 100) : 10;
     const skip = (page - 1) * limit;
 
     const query = this.buildTransactionListQuery(tenantId, filters);
@@ -932,12 +932,7 @@ export class InventoryService {
 
     const trimmed = filters.search?.trim();
     if (trimmed) {
-      const escaped = escapeRegex(trimmed);
-      filter.$or = [
-        { name: { $regex: escaped, $options: 'i' } },
-        { sku: { $regex: `^${escaped}`, $options: 'i' } },
-        { barcode: { $regex: `^${escaped}`, $options: 'i' } },
-      ];
+      applySearchTextFilter(filter, trimmed);
     }
 
     return filter;

@@ -12,6 +12,10 @@ export class Supplier {
   @Prop({ required: true })
   name: string;
 
+  /** Normalized lowercase text for case/accent-insensitive search. */
+  @Prop({ default: '', index: true })
+  search_text: string;
+
   @Prop({ required: true })
   phone: string;
 

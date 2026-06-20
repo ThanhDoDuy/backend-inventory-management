@@ -4,7 +4,10 @@ import { Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { ProductStatus } from '../../shared/constants/business.enums';
 import { AppError, ERRORS } from '../../shared/errors';
-import { escapeRegex } from '../../shared/utils/regex.util';
+import {
+  applySearchTextFilter,
+  productSearchText,
+} from '../../shared/utils/search.util';
 import { APP } from '../../shared/constants/app.constants';
 import { buildExcelBuffer } from '../../shared/utils/excel.util';
 import { getProductImportColumnFormats } from '../../shared/constants/import-template-formats';
@@ -68,7 +71,7 @@ export class ProductsService {
   async list(
     tenantId: string,
     page = 1,
-    limit = 20,
+    limit = 10,
     search?: string,
     categoryId?: string,
     status?: ProductStatus,
@@ -93,10 +96,7 @@ export class ProductsService {
     if (status) {
       filter.status = status;
     }
-    const searchFilter = this.buildProductSearchFilter(search);
-    if (searchFilter) {
-      filter.$or = searchFilter;
-    }
+    applySearchTextFilter(filter, search);
 
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
@@ -152,6 +152,11 @@ export class ProductsService {
       tenant_id: new Types.ObjectId(tenantId),
       sku: dto.sku.trim(),
       name: dto.name.trim(),
+      search_text: productSearchText(
+        dto.name.trim(),
+        dto.sku.trim(),
+        dto.barcode?.trim(),
+      ),
       cost_price: dto.cost_price,
       selling_price: prices.RETAIL,
       prices,
@@ -236,6 +241,12 @@ export class ProductsService {
     if (dto.image_url !== undefined) {
       product.image_url = dto.image_url.trim();
     }
+
+    product.search_text = productSearchText(
+      product.name,
+      product.sku,
+      product.barcode,
+    );
 
     await product.save();
 
@@ -536,10 +547,7 @@ export class ProductsService {
       if (options?.status) {
         filter.status = options.status;
       }
-      const searchFilter = this.buildProductSearchFilter(options?.search);
-      if (searchFilter) {
-        filter.$or = searchFilter;
-      }
+      applySearchTextFilter(filter, options?.search);
     }
 
     return this.productModel
@@ -547,21 +555,5 @@ export class ProductsService {
       .populate('category_id', 'name')
       .sort({ sku: 1 })
       .limit(APP.csv.exportMaxRows);
-  }
-
-  private buildProductSearchFilter(
-    search?: string,
-  ): Record<string, unknown>[] | null {
-    const trimmed = search?.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    const escaped = escapeRegex(trimmed);
-    return [
-      { name: { $regex: escaped, $options: 'i' } },
-      { sku: { $regex: `^${escaped}`, $options: 'i' } },
-      { barcode: { $regex: `^${escaped}`, $options: 'i' } },
-    ];
   }
 }

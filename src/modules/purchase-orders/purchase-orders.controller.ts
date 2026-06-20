@@ -126,7 +126,7 @@ export class PurchaseOrdersController {
     return this.purchaseOrdersService.list(
       user.tenantId,
       page ? parseInt(page, 10) : 1,
-      limit ? parseInt(limit, 10) : 20,
+      limit ? parseInt(limit, 10) : 10,
       status,
       supplierId,
       from,

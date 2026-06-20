@@ -39,7 +39,7 @@ export class SettingsController {
     return this.settingsService.listHistory(
       user.tenantId,
       page ? parseInt(page, 10) : 1,
-      limit ? parseInt(limit, 10) : 20,
+      limit ? parseInt(limit, 10) : 10,
     );
   }
 

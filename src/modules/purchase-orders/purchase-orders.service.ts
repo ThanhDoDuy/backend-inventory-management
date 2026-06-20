@@ -493,7 +493,7 @@ export class PurchaseOrdersService {
   async list(
     tenantId: string,
     page = 1,
-    limit = 20,
+    limit = 10,
     status?: PoStatus,
     supplierId?: string,
     from?: string,

@@ -30,6 +30,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { InvoicesModule } from './modules/invoices/invoices.module';
 import { PriceTiersModule } from './modules/price-tiers/price-tiers.module';
 import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
+import { SearchIndexModule } from './infrastructure/search/search-index.module';
 import { JwtAuthGuard } from './shared/guards/jwt-auth.guard';
 import { PermissionsGuard } from './shared/guards/permissions.guard';
 import { TransformInterceptor } from './shared/interceptors/transform.interceptor';
@@ -72,6 +73,7 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
     InvoicesModule,
     PriceTiersModule,
     PurchaseOrdersModule,
+    SearchIndexModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

@@ -21,6 +21,10 @@ export class Product {
   @Prop({ required: true })
   name: string;
 
+  /** Normalized lowercase text for case/accent-insensitive search. */
+  @Prop({ default: '', index: true })
+  search_text: string;
+
   @Prop({ type: Types.ObjectId, default: null, ref: 'Category', index: true })
   category_id?: Types.ObjectId;
 

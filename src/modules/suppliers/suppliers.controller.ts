@@ -51,7 +51,7 @@ export class SuppliersController {
     return this.suppliersService.list(
       user.tenantId,
       page ? parseInt(page, 10) : 1,
-      limit ? parseInt(limit, 10) : 20,
+      limit ? parseInt(limit, 10) : 10,
       search,
       status,
     );

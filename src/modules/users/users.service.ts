@@ -5,6 +5,10 @@ import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { AppError, ERRORS } from '../../shared/errors';
+import {
+  applySearchTextFilter,
+  userSearchText,
+} from '../../shared/utils/search.util';
 import { Role as RoleCode } from '../../shared/constants/roles.enum';
 import { UserStatus } from '../../shared/constants/roles.enum';
 import { RbacService } from '../rbac/rbac.service';
@@ -97,6 +101,7 @@ export class UsersService {
       tenant_id: new Types.ObjectId(tenantId),
       username: dto.username,
       email: dto.email.toLowerCase(),
+      search_text: userSearchText(dto.username, dto.email.toLowerCase()),
       password_hash: passwordHash,
       role_id: new Types.ObjectId(dto.role_id),
       status: UserStatus.ACTIVE,
@@ -121,6 +126,7 @@ export class UsersService {
       tenant_id: new Types.ObjectId(tenantId),
       username,
       email: email.toLowerCase(),
+      search_text: userSearchText(username, email.toLowerCase()),
       password_hash: passwordHash,
       role_id: adminRole._id,
       status: UserStatus.ACTIVE,
@@ -137,7 +143,7 @@ export class UsersService {
   async list(
     tenantId: string,
     page = 1,
-    limit = 20,
+    limit = 10,
     search?: string,
     roleId?: string,
     status?: UserStatus,
@@ -158,10 +164,7 @@ export class UsersService {
     if (roleId) filter.role_id = new Types.ObjectId(roleId);
     if (status) filter.status = status;
     if (search) {
-      filter.$or = [
-        { username: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-      ];
+      applySearchTextFilter(filter, search);
     }
 
     const skip = (page - 1) * limit;
@@ -208,6 +211,7 @@ export class UsersService {
       await this.assertCanDemoteLastAdmin(tenantId, user.role_id, dto.role_id);
       user.role_id = new Types.ObjectId(dto.role_id);
     }
+    user.search_text = userSearchText(user.username, user.email);
     await user.save();
     return user;
   }

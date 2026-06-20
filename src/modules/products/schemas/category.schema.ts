@@ -14,6 +14,10 @@ export class Category {
   @Prop({ required: true })
   name: string;
 
+  /** Normalized lowercase text for case/accent-insensitive search. */
+  @Prop({ default: '', index: true })
+  search_text: string;
+
   @Prop({ default: '' })
   description: string;
 

@@ -81,7 +81,7 @@ export class AuditService {
   ) {
     const page = filters.page && filters.page > 0 ? filters.page : 1;
     const limit =
-      filters.limit && filters.limit > 0 ? Math.min(filters.limit, 100) : 50;
+      filters.limit && filters.limit > 0 ? Math.min(filters.limit, 100) : 10;
     const skip = (page - 1) * limit;
 
     const query: Record<string, unknown> = {

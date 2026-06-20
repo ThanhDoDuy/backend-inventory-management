@@ -3,6 +3,11 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
 import { AppError, ERRORS } from '../../shared/errors';
+import {
+  applySearchTextFilter,
+  categorySearchText,
+  normalizeSearchText,
+} from '../../shared/utils/search.util';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
 import { Product, ProductDocument } from './schemas/product.schema';
 import { Category, CategoryDocument } from './schemas/category.schema';
@@ -50,7 +55,7 @@ export class CategoriesService {
     return this.categoryModel.findOne({
       tenant_id: new Types.ObjectId(tenantId),
       is_deleted: false,
-      name: { $regex: new RegExp(`^${this.escapeRegex(trimmed)}$`, 'i') },
+      search_text: { $regex: `^${this.escapeRegex(normalizeSearchText(trimmed))}$` },
     });
   }
 
@@ -70,6 +75,7 @@ export class CategoriesService {
         tenant_id: new Types.ObjectId(tenantId),
         name: trimmed,
         description,
+        search_text: categorySearchText(trimmed, description),
       });
     } catch {
       const again = await this.findByNameInTenant(tenantId, trimmed);
@@ -87,7 +93,7 @@ export class CategoriesService {
   async list(
     tenantId: string,
     page = 1,
-    limit = 20,
+    limit = 10,
     search?: string,
   ) {
     this.logger.step('CategoriesService.list', {
@@ -103,10 +109,7 @@ export class CategoriesService {
     };
 
     if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-      ];
+      applySearchTextFilter(filter, search);
     }
 
     const skip = (page - 1) * limit;
@@ -139,6 +142,10 @@ export class CategoriesService {
       tenant_id: new Types.ObjectId(tenantId),
       name: dto.name.trim(),
       description: dto.description?.trim() ?? '',
+      search_text: categorySearchText(
+        dto.name.trim(),
+        dto.description?.trim() ?? '',
+      ),
     });
   }
 
@@ -162,6 +169,8 @@ export class CategoriesService {
     if (dto.description !== undefined) {
       category.description = dto.description.trim();
     }
+
+    category.search_text = categorySearchText(category.name, category.description);
 
     await category.save();
     return category;

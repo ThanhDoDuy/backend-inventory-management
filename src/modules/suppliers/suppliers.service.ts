@@ -5,6 +5,10 @@ import { AppLoggerService } from '../../infrastructure/logger/app-logger.service
 import { PartyStatus } from '../../shared/constants/business.enums';
 import { AppError, ERRORS } from '../../shared/errors';
 import { APP } from '../../shared/constants/app.constants';
+import {
+  applySearchTextFilter,
+  supplierSearchText,
+} from '../../shared/utils/search.util';
 import { buildExcelBuffer } from '../../shared/utils/excel.util';
 import { SUPPLIER_IMPORT_COLUMN_FORMATS } from '../../shared/constants/import-template-formats';
 import { CreateSupplierDto, UpdateSupplierDto } from './dto/supplier.dto';
@@ -45,7 +49,7 @@ export class SuppliersService {
   async list(
     tenantId: string,
     page = 1,
-    limit = 20,
+    limit = 10,
     search?: string,
     status?: PartyStatus,
   ) {
@@ -67,11 +71,7 @@ export class SuppliersService {
     }
 
     if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-      ];
+      applySearchTextFilter(filter, search);
     }
 
     const skip = (page - 1) * limit;
@@ -110,6 +110,13 @@ export class SuppliersService {
       email: dto.email?.toLowerCase(),
       address: dto.address,
       tax_code: dto.tax_code,
+      search_text: supplierSearchText(
+        dto.name,
+        dto.phone,
+        dto.email?.toLowerCase(),
+        dto.tax_code,
+        dto.address,
+      ),
       status: PartyStatus.ACTIVE,
       created_by: new Types.ObjectId(userId),
       modified_by: new Types.ObjectId(userId),
@@ -142,6 +149,14 @@ export class SuppliersService {
     if (dto.phone !== undefined) supplier.phone = dto.phone;
     if (dto.address !== undefined) supplier.address = dto.address;
     if (dto.tax_code !== undefined) supplier.tax_code = dto.tax_code;
+
+    supplier.search_text = supplierSearchText(
+      supplier.name,
+      supplier.phone,
+      supplier.email,
+      supplier.tax_code,
+      supplier.address,
+    );
 
     supplier.modified_by = new Types.ObjectId(userId);
     await supplier.save();
@@ -391,11 +406,7 @@ export class SuppliersService {
       }
 
       if (options?.search) {
-        filter.$or = [
-          { name: { $regex: options.search, $options: 'i' } },
-          { phone: { $regex: options.search, $options: 'i' } },
-          { email: { $regex: options.search, $options: 'i' } },
-        ];
+        applySearchTextFilter(filter, options.search);
       }
     }
 

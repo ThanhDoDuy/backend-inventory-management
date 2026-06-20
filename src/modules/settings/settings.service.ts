@@ -342,7 +342,7 @@ export class SettingsService {
     return flag.toObject();
   }
 
-  async listHistory(tenantId: string, page = 1, limit = 20) {
+  async listHistory(tenantId: string, page = 1, limit = 10) {
     const skip = (page - 1) * limit;
     const filter = { tenant_id: new Types.ObjectId(tenantId) };
 

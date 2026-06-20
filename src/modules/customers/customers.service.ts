@@ -10,6 +10,10 @@ import {
   PartyStatus,
 } from '../../shared/constants/business.enums';
 import { AppError, ERRORS } from '../../shared/errors';
+import {
+  applySearchTextFilter,
+  customerSearchText,
+} from '../../shared/utils/search.util';
 import { buildCsv } from '../../shared/utils/csv.util';
 import { buildExcelBuffer } from '../../shared/utils/excel.util';
 import { CreateCustomerDto, UpdateCustomerDto } from './dto/customer.dto';
@@ -89,7 +93,7 @@ export class CustomersService {
   async list(
     tenantId: string,
     page = 1,
-    limit = 20,
+    limit = 10,
     search?: string,
     status?: PartyStatus,
     customerType?: CustomerType,
@@ -158,6 +162,13 @@ export class CustomersService {
           ? dto.tax_code?.trim()
           : undefined,
       contact_person: dto.contact_person?.trim() || undefined,
+      search_text: customerSearchText(
+        dto.name,
+        dto.phone,
+        dto.email?.toLowerCase(),
+        dto.customer_type === CustomerType.COMPANY ? dto.tax_code?.trim() : undefined,
+        dto.contact_person?.trim(),
+      ),
       status: PartyStatus.ACTIVE,
       created_by: new Types.ObjectId(userId),
       modified_by: new Types.ObjectId(userId),
@@ -211,6 +222,14 @@ export class CustomersService {
     } else {
       customer.tax_code = undefined;
     }
+
+    customer.search_text = customerSearchText(
+      customer.name,
+      customer.phone,
+      customer.email,
+      customer.tax_code,
+      customer.contact_person,
+    );
 
     customer.modified_by = new Types.ObjectId(userId);
     await customer.save();
@@ -438,13 +457,7 @@ export class CustomersService {
     }
 
     if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { tax_code: { $regex: search, $options: 'i' } },
-        { contact_person: { $regex: search, $options: 'i' } },
-      ];
+      applySearchTextFilter(filter, search);
     }
 
     return filter;
