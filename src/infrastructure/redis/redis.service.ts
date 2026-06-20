@@ -28,9 +28,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     const url = this.configService.get<string>('redisUrl');
     this.client = new Redis(url!, {
       maxRetriesPerRequest: 3,
+      lazyConnect: true,
+      retryStrategy: (times) => Math.min(times * 200, 2_000),
     });
     this.client.on('error', (err) =>
-      this.logger.error(`Redis error: ${err.message}`),
+      this.logger.warn(`Redis connection error: ${err.message}`),
     );
   }
 
@@ -109,6 +111,14 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    await this.client?.quit();
+    if (!this.client) {
+      return;
+    }
+
+    try {
+      await this.client.quit();
+    } catch {
+      this.client.disconnect();
+    }
   }
 }

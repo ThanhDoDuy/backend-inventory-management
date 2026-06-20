@@ -253,16 +253,29 @@ export class RbacService {
   async clearRbacCache(tenantId: string) {
     this.logger.step('RbacService.clearRbacCache', { tenantId });
 
-    const [rolesDeleted, permissionsCleared] = await Promise.all([
-      this.redisService.delByPattern(rbacTenantRolesCachePattern(tenantId)),
-      this.clearPermissionsCache(),
-    ]);
+    try {
+      const [rolesDeleted, permissionsCleared] = await Promise.all([
+        this.redisService.delByPattern(rbacTenantRolesCachePattern(tenantId)),
+        this.clearPermissionsCache(),
+      ]);
 
-    return {
-      message: 'RBAC cache cleared successfully',
-      roles_deleted: rolesDeleted,
-      permissions_cache_cleared: permissionsCleared,
-    };
+      return {
+        message: 'RBAC cache cleared successfully',
+        roles_deleted: rolesDeleted,
+        permissions_cache_cleared: permissionsCleared,
+      };
+    } catch (error) {
+      this.logger.warn('RbacService.clearRbacCache skipped', {
+        tenantId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return {
+        message: 'RBAC cache clear skipped (Redis unavailable)',
+        roles_deleted: 0,
+        permissions_cache_cleared: false,
+      };
+    }
   }
 
   async clearRbacCacheForSeed(): Promise<void> {
@@ -324,7 +337,17 @@ export class RbacService {
     roleId: string,
   ): Promise<RoleCachePayload | null> {
     const cacheKey = rbacRoleCacheKey(tenantId, roleId);
-    const cached = await this.redisService.get(cacheKey);
+    let cached: string | null = null;
+
+    try {
+      cached = await this.redisService.get(cacheKey);
+    } catch (error) {
+      this.logger.warn('RbacService.getRolePermissions cache read skipped', {
+        tenantId,
+        roleId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     if (cached) {
       return JSON.parse(cached) as RoleCachePayload;
@@ -348,11 +371,19 @@ export class RbacService {
       permissionCodes: role.permission_codes,
     };
 
-    await this.redisService.set(
-      cacheKey,
-      JSON.stringify(payload),
-      APP.rbac.cacheTtlSeconds,
-    );
+    try {
+      await this.redisService.set(
+        cacheKey,
+        JSON.stringify(payload),
+        APP.rbac.cacheTtlSeconds,
+      );
+    } catch (error) {
+      this.logger.warn('RbacService.getRolePermissions cache write skipped', {
+        tenantId,
+        roleId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     return payload;
   }
@@ -366,23 +397,46 @@ export class RbacService {
       permissionCodes: role.permission_codes,
     };
 
-    await this.redisService.set(
-      rbacRoleCacheKey(tenantId, role._id.toString()),
-      JSON.stringify(payload),
-      APP.rbac.cacheTtlSeconds,
-    );
+    try {
+      await this.redisService.set(
+        rbacRoleCacheKey(tenantId, role._id.toString()),
+        JSON.stringify(payload),
+        APP.rbac.cacheTtlSeconds,
+      );
+    } catch (error) {
+      this.logger.warn('RbacService.cacheRoleFromDocument skipped', {
+        tenantId,
+        roleId: role._id.toString(),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async invalidateRoleCache(
     tenantId: string,
     roleId: string,
   ): Promise<void> {
-    await this.redisService.del(rbacRoleCacheKey(tenantId, roleId));
+    try {
+      await this.redisService.del(rbacRoleCacheKey(tenantId, roleId));
+    } catch (error) {
+      this.logger.warn('RbacService.invalidateRoleCache skipped', {
+        tenantId,
+        roleId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async clearPermissionsCache(): Promise<boolean> {
-    await this.redisService.del(APP.rbac.permissionsCacheKey);
-    return true;
+    try {
+      await this.redisService.del(APP.rbac.permissionsCacheKey);
+      return true;
+    } catch (error) {
+      this.logger.warn('RbacService.clearPermissionsCache skipped', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
   }
 
   private async warmTenantRoleCaches(tenantId: string): Promise<void> {
@@ -394,18 +448,25 @@ export class RbacService {
       .select('_id is_wildcard permission_codes')
       .lean();
 
-    await Promise.all(
-      roles.map((role) =>
-        this.redisService.set(
-          rbacRoleCacheKey(tenantId, role._id.toString()),
-          JSON.stringify({
-            isWildcard: role.is_wildcard,
-            permissionCodes: role.permission_codes,
-          } satisfies RoleCachePayload),
-          APP.rbac.cacheTtlSeconds,
+    try {
+      await Promise.all(
+        roles.map((role) =>
+          this.redisService.set(
+            rbacRoleCacheKey(tenantId, role._id.toString()),
+            JSON.stringify({
+              isWildcard: role.is_wildcard,
+              permissionCodes: role.permission_codes,
+            } satisfies RoleCachePayload),
+            APP.rbac.cacheTtlSeconds,
+          ),
         ),
-      ),
-    );
+      );
+    } catch (error) {
+      this.logger.warn('RbacService.warmTenantRoleCaches skipped', {
+        tenantId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async resolvePermissionCodes(

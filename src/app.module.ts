@@ -31,6 +31,7 @@ import { InvoicesModule } from './modules/invoices/invoices.module';
 import { PriceTiersModule } from './modules/price-tiers/price-tiers.module';
 import { PurchaseOrdersModule } from './modules/purchase-orders/purchase-orders.module';
 import { SearchIndexModule } from './infrastructure/search/search-index.module';
+import { SeedDemoModule } from './scripts/seed-demo.module';
 import { JwtAuthGuard } from './shared/guards/jwt-auth.guard';
 import { PermissionsGuard } from './shared/guards/permissions.guard';
 import { TransformInterceptor } from './shared/interceptors/transform.interceptor';
@@ -74,6 +75,7 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
     PriceTiersModule,
     PurchaseOrdersModule,
     SearchIndexModule,
+    SeedDemoModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

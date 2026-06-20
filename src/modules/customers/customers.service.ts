@@ -150,17 +150,13 @@ export class CustomersService {
       await this.assertTaxCodeAvailable(tenantId, dto.tax_code);
     }
 
-    return this.customerModel.create({
+    const payload: Record<string, unknown> = {
       tenant_id: new Types.ObjectId(tenantId),
       customer_type: dto.customer_type,
       name: dto.name,
       phone: dto.phone,
       email: dto.email?.toLowerCase(),
       address: dto.address,
-      tax_code:
-        dto.customer_type === CustomerType.COMPANY
-          ? dto.tax_code?.trim()
-          : undefined,
       contact_person: dto.contact_person?.trim() || undefined,
       search_text: customerSearchText(
         dto.name,
@@ -172,7 +168,17 @@ export class CustomersService {
       status: PartyStatus.ACTIVE,
       created_by: new Types.ObjectId(userId),
       modified_by: new Types.ObjectId(userId),
-    });
+    };
+
+    if (dto.customer_type === CustomerType.COMPANY && dto.tax_code?.trim()) {
+      payload.tax_code = dto.tax_code.trim();
+    }
+
+    const cleaned = Object.fromEntries(
+      Object.entries(payload).filter(([, value]) => value !== undefined),
+    );
+
+    return this.customerModel.create(cleaned);
   }
 
   async update(

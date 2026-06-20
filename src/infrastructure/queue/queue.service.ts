@@ -16,10 +16,11 @@ import {
 
 @Injectable()
 export class QueueService implements OnModuleInit, OnModuleDestroy {
-  private auditQueue: Queue;
-  private notificationQueue: Queue;
+  private auditQueue?: Queue;
+  private notificationQueue?: Queue;
   private auditWorker?: Worker;
   private notificationWorker?: Worker;
+  private readonly seedMode = process.env.SEED_DEMO === 'true';
 
   constructor(
     private configService: ConfigService,
@@ -29,6 +30,13 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
+    if (this.seedMode) {
+      this.logger.step('QueueService.initialized', {
+        mode: 'seed (queues disabled)',
+      });
+      return;
+    }
+
     const url = this.configService.get<string>('redisUrl')!;
     const connection = { url, maxRetriesPerRequest: null };
 
@@ -82,6 +90,10 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async enqueueAudit(payload: AuditJobPayload): Promise<void> {
+    if (this.seedMode || !this.auditQueue) {
+      return;
+    }
+
     await this.auditQueue.add('audit', payload, {
       removeOnComplete: APP.queue.removeOnComplete,
       removeOnFail: APP.queue.removeOnFail,
@@ -89,6 +101,10 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async enqueueNotification(payload: DomainEventPayload): Promise<void> {
+    if (this.seedMode || !this.notificationQueue) {
+      return;
+    }
+
     await this.notificationQueue.add('notification', payload, {
       removeOnComplete: APP.queue.removeOnComplete,
       removeOnFail: APP.queue.removeOnFail,
@@ -96,9 +112,15 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.auditWorker?.close();
-    await this.notificationWorker?.close();
-    await this.auditQueue?.close();
-    await this.notificationQueue?.close();
+    if (this.seedMode) {
+      return;
+    }
+
+    await Promise.allSettled([
+      this.auditWorker?.close(),
+      this.notificationWorker?.close(),
+      this.auditQueue?.close(),
+      this.notificationQueue?.close(),
+    ]);
   }
 }

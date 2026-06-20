@@ -31,7 +31,7 @@ export class Customer {
   @Prop({ default: null })
   address?: string;
 
-  @Prop({ default: null })
+  @Prop()
   tax_code?: string;
 
   @Prop({ default: null })
@@ -69,7 +69,12 @@ CustomerSchema.index(
 );
 CustomerSchema.index(
   { tenant_id: 1, tax_code: 1 },
-  { unique: true, sparse: true },
+  {
+    unique: true,
+    partialFilterExpression: {
+      tax_code: { $exists: true, $nin: [null, ''] },
+    },
+  },
 );
 CustomerSchema.index({ tenant_id: 1, customer_type: 1 });
 CustomerSchema.index({ tenant_id: 1, name: 1 });
