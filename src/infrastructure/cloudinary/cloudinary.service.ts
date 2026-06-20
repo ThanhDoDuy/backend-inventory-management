@@ -69,16 +69,14 @@ export class CloudinaryService implements OnModuleInit {
 
     const timestamp = Math.round(Date.now() / 1000);
     const folder = this.buildProductFolder(tenantSlug, productId);
-    const public_id = `${folder}/${randomUUID()}`;
+    const public_id = randomUUID();
     const transformation = APP.productImage.incomingTransformation;
 
-    const paramsToSign: Record<string, string | number | boolean> = {
-      timestamp,
+    // Only sign params that the client sends to Cloudinary (must match exactly).
+    const paramsToSign: Record<string, string | number> = {
       folder,
       public_id,
-      overwrite: false,
-      unique_filename: true,
-      invalidate: true,
+      timestamp,
       transformation,
     };
 
