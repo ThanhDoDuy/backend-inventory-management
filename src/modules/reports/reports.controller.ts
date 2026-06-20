@@ -53,10 +53,14 @@ export class ReportsController {
   getDeadStock(
     @CurrentUser() user: RequestUser,
     @Query('inactiveDays') inactiveDays?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     return this.reportsService.getDeadStock(
       user.tenantId,
       inactiveDays ? parseInt(inactiveDays, 10) : 30,
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 10,
     );
   }
 

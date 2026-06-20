@@ -249,7 +249,12 @@ export class ReportsService {
     return rows;
   }
 
-  async getDeadStock(tenantId: string, inactiveDays = 30) {
+  async getDeadStock(
+    tenantId: string,
+    inactiveDays = 30,
+    page = 1,
+    limit = 10,
+  ) {
     const tenantObjectId = new Types.ObjectId(tenantId);
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - inactiveDays);
@@ -280,8 +285,11 @@ export class ReportsService {
     ]);
 
     const soldIds = soldProductIds.map((row) => row._id);
+    const safePage = page > 0 ? page : 1;
+    const safeLimit = limit > 0 ? Math.min(limit, 100) : 10;
+    const skip = (safePage - 1) * safeLimit;
 
-    const rows = await this.productModel.aggregate([
+    const [result] = await this.productModel.aggregate([
       {
         $match: {
           tenant_id: tenantObjectId,
@@ -337,10 +345,59 @@ export class ReportsService {
           inactive_days: inactiveDays,
         },
       },
-      { $sort: { stock_value: -1 } },
+      {
+        $facet: {
+          items: [
+            { $sort: { stock_value: -1 } },
+            { $skip: skip },
+            { $limit: safeLimit },
+          ],
+          summary: [
+            {
+              $group: {
+                _id: null,
+                total_items: { $sum: 1 },
+                total_value: { $sum: '$stock_value' },
+              },
+            },
+          ],
+        },
+      },
     ]);
 
-    return rows;
+    const items = result?.items ?? [];
+    const summaryRow = result?.summary?.[0] ?? {
+      total_items: 0,
+      total_value: 0,
+    };
+    const total = summaryRow.total_items ?? 0;
+
+    return {
+      items,
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        total,
+        total_pages: total > 0 ? Math.ceil(total / safeLimit) : 0,
+      },
+      summary: {
+        total_items: total,
+        total_value: summaryRow.total_value ?? 0,
+      },
+    };
+  }
+
+  private async getDeadStockRowsForExport(
+    tenantId: string,
+    inactiveDays: number,
+  ): Promise<Array<Record<string, unknown>>> {
+    const result = await this.getDeadStock(
+      tenantId,
+      inactiveDays,
+      1,
+      APP.csv.exportMaxRows,
+    );
+    return result.items as Array<Record<string, unknown>>;
   }
 
   async exportCsv(
@@ -377,7 +434,10 @@ export class ReportsService {
       case APP.report.types.DEAD_STOCK: {
         header =
           'product_id,name,sku,available_quantity,stock_value,inactive_days';
-        rows = await this.getDeadStock(tenantId, inactiveDays ?? 30);
+        rows = await this.getDeadStockRowsForExport(
+          tenantId,
+          inactiveDays ?? 30,
+        );
         break;
       }
       default:
