@@ -137,6 +137,8 @@ export class SettingsService {
   }
 
   async listAll(tenantId: string) {
+    await this.ensureMissingDefaultSettings(tenantId);
+
     const [settings, featureFlags] = await Promise.all([
       this.settingModel
         .find({
@@ -264,6 +266,8 @@ export class SettingsService {
     userId: string,
     items: BulkUpdateSettingItemDto[],
   ) {
+    await this.ensureMissingDefaultSettings(tenantId);
+
     const updated: unknown[] = [];
     for (const item of items) {
       const result = await this.updateByKey(tenantId, userId, item.key, {
@@ -411,6 +415,41 @@ export class SettingsService {
 
   async invalidate(tenantId: string, key: string): Promise<void> {
     await this.redisService.del(this.settingsCacheKey(tenantId, key));
+  }
+
+  private async ensureMissingDefaultSettings(tenantId: string): Promise<void> {
+    const tenantObjectId = new Types.ObjectId(tenantId);
+    const existingKeys = await this.settingModel.distinct('key', {
+      tenant_id: tenantObjectId,
+      is_active: true,
+    });
+    const existingSet = new Set(existingKeys);
+
+    const missing = DEFAULT_SETTINGS.filter((setting) => !existingSet.has(setting.key));
+    if (missing.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      missing.map((setting) =>
+        this.settingModel.updateOne(
+          { tenant_id: tenantObjectId, key: setting.key },
+          {
+            $setOnInsert: {
+              tenant_id: tenantObjectId,
+              key: setting.key,
+              value: setting.value,
+              type: setting.type,
+              group: setting.group,
+              description: setting.description,
+              is_active: true,
+              version: 1,
+            },
+          },
+          { upsert: true },
+        ),
+      ),
+    );
   }
 
   private validateSettingValue(type: string, value: string): void {
