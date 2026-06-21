@@ -26,6 +26,9 @@ export class Notification {
   @Prop({ type: Object, default: {} })
   payload: Record<string, unknown>;
 
+  @Prop({ default: '' })
+  redirect_url: string;
+
   @Prop({ default: false, index: true })
   is_read: boolean;
 

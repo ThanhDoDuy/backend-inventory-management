@@ -13,6 +13,53 @@ export class NotificationsService {
     private readonly logger: AppLoggerService,
   ) {}
 
+  async getLatest(
+    tenantId: string,
+    userId: string,
+    filters: { page?: number; limit?: number },
+  ) {
+    const page = filters.page && filters.page > 0 ? filters.page : 1;
+    const limit =
+      filters.limit && filters.limit > 0 ? Math.min(filters.limit, 50) : 5;
+    const skip = (page - 1) * limit;
+
+    const baseQuery = {
+      tenant_id: new Types.ObjectId(tenantId),
+      user_id: new Types.ObjectId(userId),
+    };
+
+    const [items, total, unreadCount] = await Promise.all([
+      this.notificationModel
+        .find(baseQuery)
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select(
+          'type title message is_read redirect_url payload created_at read_at',
+        )
+        .lean(),
+      this.notificationModel.countDocuments(baseQuery),
+      this.notificationModel.countDocuments({
+        ...baseQuery,
+        is_read: false,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      items,
+      unread_count: unreadCount,
+      pagination: {
+        page,
+        limit,
+        total,
+        total_pages: totalPages,
+        has_more: page < totalPages,
+      },
+    };
+  }
+
   async list(
     tenantId: string,
     userId: string,

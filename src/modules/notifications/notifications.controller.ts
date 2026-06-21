@@ -9,6 +9,19 @@ import { NotificationsService } from './notifications.service';
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
+  @Get('latest')
+  @RequirePermission(PERMISSIONS.NOTIFICATIONS.VIEW)
+  latest(
+    @CurrentUser() user: RequestUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.notificationsService.getLatest(user.tenantId, user.userId, {
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 5,
+    });
+  }
+
   @Get()
   @RequirePermission(PERMISSIONS.NOTIFICATIONS.VIEW)
   list(

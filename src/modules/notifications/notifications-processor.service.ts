@@ -10,6 +10,7 @@ import { Role as RoleCode } from '../../shared/constants/roles.enum';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { Role, RoleDocument } from '../rbac/schemas/role.schema';
 import { Notification, NotificationDocument } from './schemas/notification.schema';
+import { buildNotificationRedirectUrl } from './notification-redirect.util';
 
 @Injectable()
 export class NotificationsProcessorService {
@@ -60,6 +61,10 @@ export class NotificationsProcessorService {
       title: 'Low stock alert',
       message: `${productName} is below minimum stock (${availableQuantity} / ${minimumStock})`,
       payload: event.data,
+      redirectUrl: buildNotificationRedirectUrl(
+        APP.notification.types.LOW_STOCK,
+        event.data,
+      ),
     });
   }
 
@@ -76,6 +81,10 @@ export class NotificationsProcessorService {
       title: 'Purchase order received',
       message: `${poNumber} has been received`,
       payload: event.data,
+      redirectUrl: buildNotificationRedirectUrl(
+        APP.notification.types.PO_RECEIVED,
+        event.data,
+      ),
     });
   }
 
@@ -98,6 +107,10 @@ export class NotificationsProcessorService {
       title: 'Invoice paid',
       message: `Invoice ${invoiceNumber} has been paid`,
       payload: event.data,
+      redirectUrl: buildNotificationRedirectUrl(
+        APP.notification.types.INVOICE_PAID,
+        event.data,
+      ),
     });
   }
 
@@ -138,6 +151,7 @@ export class NotificationsProcessorService {
       title: string;
       message: string;
       payload: Record<string, unknown>;
+      redirectUrl?: string;
     },
   ): Promise<void> {
     if (userIds.length === 0) {
@@ -152,6 +166,9 @@ export class NotificationsProcessorService {
       title: params.title,
       message: params.message,
       payload: params.payload,
+      redirect_url:
+        params.redirectUrl ??
+        buildNotificationRedirectUrl(params.type, params.payload),
       is_read: false,
     }));
 
