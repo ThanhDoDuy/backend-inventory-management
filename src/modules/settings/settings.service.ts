@@ -176,14 +176,56 @@ export class SettingsService {
     key: string,
     dto: UpdateSettingDto,
   ) {
-    const setting = await this.settingModel.findOne({
-      tenant_id: new Types.ObjectId(tenantId),
+    const tenantObjectId = new Types.ObjectId(tenantId);
+    const userObjectId = new Types.ObjectId(userId);
+
+    let setting = await this.settingModel.findOne({
+      tenant_id: tenantObjectId,
       key,
       is_active: true,
     });
 
     if (!setting) {
-      throw new AppError(ERRORS.SETTINGS.NOT_FOUND);
+      const defaultSetting = DEFAULT_SETTINGS.find((item) => item.key === key);
+      if (!defaultSetting) {
+        throw new AppError(ERRORS.SETTINGS.NOT_FOUND);
+      }
+
+      this.validateSettingValue(defaultSetting.type, dto.value);
+
+      setting = await this.settingModel.create({
+        tenant_id: tenantObjectId,
+        key: defaultSetting.key,
+        value: dto.value,
+        type: defaultSetting.type,
+        group: defaultSetting.group,
+        description: defaultSetting.description,
+        is_active: true,
+        version: 1,
+        modified_by: userObjectId,
+      });
+
+      await this.invalidate(tenantId, key);
+      await this.recordHistory({
+        tenantId,
+        key,
+        oldValue: defaultSetting.value,
+        newValue: dto.value,
+        userId,
+        changeType: 'SETTING',
+      });
+
+      this.auditService.emit({
+        tenantId,
+        userId,
+        action: AUDIT_ACTIONS.UPDATE_SETTING,
+        module: AUDIT_MODULES.SETTINGS,
+        entityId: key,
+        oldValue: { value: defaultSetting.value },
+        newValue: { value: dto.value },
+      });
+
+      return setting.toObject();
     }
 
     this.validateSettingValue(setting.type, dto.value);
