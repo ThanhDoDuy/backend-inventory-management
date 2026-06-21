@@ -27,4 +27,25 @@ export const DEFAULT_SETTINGS = [
     group: 'INVENTORY',
     description: 'Default low stock threshold',
   },
+  {
+    key: 'receipt.show_store_name',
+    value: 'true',
+    type: 'BOOLEAN',
+    group: 'RECEIPT',
+    description: 'Show store name on printed receipt',
+  },
+  {
+    key: 'receipt.show_store_phone',
+    value: 'false',
+    type: 'BOOLEAN',
+    group: 'RECEIPT',
+    description: 'Show store phone on printed receipt',
+  },
+  {
+    key: 'receipt.show_store_address',
+    value: 'false',
+    type: 'BOOLEAN',
+    group: 'RECEIPT',
+    description: 'Show store address on printed receipt',
+  },
 ] as const;
