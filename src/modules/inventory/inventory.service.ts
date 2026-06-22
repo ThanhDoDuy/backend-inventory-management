@@ -14,6 +14,8 @@ import { AppError, ERRORS } from '../../shared/errors';
 import { buildCsv } from '../../shared/utils/csv.util';
 import { applySearchTextFilter } from '../../shared/utils/search.util';
 import { acquireLockWithRetry } from '../../shared/utils/redis-lock.util';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS, AUDIT_MODULES } from '../audit/constants/audit.constants';
 import { ProductsService } from '../products/products.service';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { ProductStatus } from '../../shared/constants/business.enums';
@@ -114,6 +116,7 @@ export class InventoryService {
     private settingsService: SettingsService,
     private redisService: RedisService,
     private domainEventPublisher: DomainEventPublisher,
+    private auditService: AuditService,
     private readonly logger: AppLoggerService,
   ) {}
 
@@ -262,6 +265,22 @@ export class InventoryService {
     );
 
     void this.checkLowStockAlert(tenantId, dto.productId);
+
+    this.auditService.emit({
+      tenantId,
+      userId,
+      action: AUDIT_ACTIONS.STOCK_ADJUSTMENT,
+      module: AUDIT_MODULES.INVENTORY,
+      entityId: transaction._id.toString(),
+      newValue: {
+        productId: dto.productId,
+        quantity: dto.quantity,
+        reason: dto.reason,
+        balance_after: transaction.balance_after,
+      },
+      metadata: { reference_id: referenceId },
+    });
+
     return this.toTransactionView(transaction);
   }
 
@@ -631,6 +650,13 @@ export class InventoryService {
       this.logger.step('InventoryService.rebuild.completed', {
         tenantId,
         products_rebuilt: aggregated.length,
+      });
+
+      this.auditService.emit({
+        tenantId,
+        action: AUDIT_ACTIONS.INVENTORY_REBUILD,
+        module: AUDIT_MODULES.INVENTORY,
+        newValue: { products_rebuilt: aggregated.length },
       });
 
       return { products_rebuilt: aggregated.length };

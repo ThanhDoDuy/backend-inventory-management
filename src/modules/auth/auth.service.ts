@@ -187,6 +187,14 @@ export class AuthService {
     };
 
     const access_token = await this.jwtService.signAsync(payload);
+
+    this.auditService.emit({
+      tenantId: user.tenant_id.toString(),
+      userId: user._id.toString(),
+      action: AUDIT_ACTIONS.TOKEN_REFRESHED,
+      module: AUDIT_MODULES.AUTH,
+    });
+
     return { access_token };
   }
 

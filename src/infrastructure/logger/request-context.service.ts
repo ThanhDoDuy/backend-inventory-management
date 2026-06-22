@@ -3,10 +3,14 @@ import { AsyncLocalStorage } from 'async_hooks';
 
 export interface RequestContext {
   requestId: string;
+  correlationId: string;
   tenantId?: string;
   userId?: string;
   method?: string;
   path?: string;
+  ipAddress?: string;
+  userAgent?: string;
+  source?: string;
 }
 
 @Injectable()

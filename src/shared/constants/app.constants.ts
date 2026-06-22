@@ -14,11 +14,14 @@ export const APP = {
 
   queue: {
     audit: 'audit-queue',
+    auditDlq: 'audit-dlq',
     notification: 'notification-queue',
     workerDrainDelaySeconds: 30 * 60,
     workerStalledIntervalMs: 30 * 60 * 1000,
     removeOnComplete: 200,
-    removeOnFail: 100,
+    removeOnFail: 500,
+    auditAttempts: 3,
+    auditBackoffMs: 1000,
     domainEvents: {
       INVENTORY_LOW_STOCK: 'inventory.low_stock.v1',
       PO_RECEIVED: 'po.received.v1',
@@ -160,18 +163,34 @@ export interface DomainEventPayload {
   type: DomainEventType | string;
   tenantId: string;
   actorUserId?: string;
+  correlationId?: string;
+  requestId?: string;
   data: Record<string, unknown>;
 }
 
+export interface AuditErrorPayload {
+  code?: string;
+  message?: string;
+}
+
 export interface AuditJobPayload {
+  event_id: string;
   tenant_id?: string;
   user_id?: string;
+  actor_username?: string;
   action: string;
   module: string;
+  category: string;
   entity_id?: string;
   status: string;
   old_value?: Record<string, unknown>;
   new_value?: Record<string, unknown>;
   ip_address?: string;
+  user_agent?: string;
+  request_id?: string;
+  correlation_id?: string;
+  source?: string;
+  error?: AuditErrorPayload;
+  duration_ms?: number;
   metadata?: Record<string, unknown>;
 }
