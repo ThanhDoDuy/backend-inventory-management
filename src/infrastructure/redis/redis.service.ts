@@ -40,6 +40,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.client.ping();
   }
 
+  getClient() {
+    return this.client;
+  }
+
   tenantKey(tenantId: string, namespace: string, id: string): string {
     return `${tenantId}:${namespace}:${id}`;
   }

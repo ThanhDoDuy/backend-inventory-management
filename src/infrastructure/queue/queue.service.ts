@@ -6,20 +6,24 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Queue, Worker } from 'bullmq';
 import { AppLoggerService } from '../logger/app-logger.service';
+import { EmailService } from '../email/email.service';
 import { AuditPersistenceService } from '../../modules/audit/audit-persistence.service';
 import { NotificationsProcessorService } from '../../modules/notifications/notifications-processor.service';
 import {
   APP,
   AuditJobPayload,
   DomainEventPayload,
+  EmailJobPayload,
 } from '../../shared/constants/app.constants';
 
 @Injectable()
 export class QueueService implements OnModuleInit, OnModuleDestroy {
   private auditQueue?: Queue;
   private notificationQueue?: Queue;
+  private emailQueue?: Queue;
   private auditWorker?: Worker;
   private notificationWorker?: Worker;
+  private emailWorker?: Worker;
   private readonly seedMode = process.env.SEED_DEMO === 'true';
 
   constructor(
@@ -27,6 +31,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     private readonly logger: AppLoggerService,
     private auditPersistenceService: AuditPersistenceService,
     private notificationsProcessorService: NotificationsProcessorService,
+    private emailService: EmailService,
   ) {}
 
   onModuleInit(): void {
@@ -42,6 +47,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
 
     this.auditQueue = new Queue(APP.queue.audit, { connection });
     this.notificationQueue = new Queue(APP.queue.notification, { connection });
+    this.emailQueue = new Queue(APP.queue.email, { connection });
 
     const workerOptions = {
       connection,
@@ -52,9 +58,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     this.auditWorker = new Worker(
       APP.queue.audit,
       async (job) => {
-        await this.auditPersistenceService.write(
-          job.data as AuditJobPayload,
-        );
+        await this.auditPersistenceService.write(job.data as AuditJobPayload);
       },
       workerOptions,
     );
@@ -65,6 +69,17 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         await this.notificationsProcessorService.processEvent(
           job.data as DomainEventPayload,
         );
+      },
+      workerOptions,
+    );
+
+    this.emailWorker = new Worker(
+      APP.queue.email,
+      async (job) => {
+        const payload = job.data as EmailJobPayload;
+        if (payload.type === 'password_reset') {
+          await this.emailService.sendPasswordReset(payload.to, payload.params);
+        }
       },
       workerOptions,
     );
@@ -83,9 +98,18 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       });
     });
 
+    this.emailWorker.on('failed', (job, error) => {
+      this.logger.error('QueueService.emailWorker.failed', {
+        jobId: job?.id,
+        attempt: job?.attemptsMade,
+        error: error.message,
+      });
+    });
+
     this.logger.step('QueueService.initialized', {
       auditQueue: APP.queue.audit,
       notificationQueue: APP.queue.notification,
+      emailQueue: APP.queue.email,
     });
   }
 
@@ -111,6 +135,23 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async enqueueEmail(payload: EmailJobPayload): Promise<void> {
+    if (this.seedMode || !this.emailQueue) {
+      // Fall back to direct send in seed mode (tests / local dev without queues)
+      if (payload.type === 'password_reset') {
+        await this.emailService.sendPasswordReset(payload.to, payload.params);
+      }
+      return;
+    }
+
+    await this.emailQueue.add('email', payload, {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 30_000 },
+      removeOnComplete: APP.queue.removeOnComplete,
+      removeOnFail: APP.queue.removeOnFail,
+    });
+  }
+
   async onModuleDestroy(): Promise<void> {
     if (this.seedMode) {
       return;
@@ -119,8 +160,10 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     await Promise.allSettled([
       this.auditWorker?.close(),
       this.notificationWorker?.close(),
+      this.emailWorker?.close(),
       this.auditQueue?.close(),
       this.notificationQueue?.close(),
+      this.emailQueue?.close(),
     ]);
   }
 }

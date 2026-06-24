@@ -15,6 +15,7 @@ export const APP = {
   queue: {
     audit: 'audit-queue',
     notification: 'notification-queue',
+    email: 'email-queue',
     workerDrainDelaySeconds: 30 * 60,
     workerStalledIntervalMs: 30 * 60 * 1000,
     removeOnComplete: 200,
@@ -161,6 +162,18 @@ export interface DomainEventPayload {
   tenantId: string;
   actorUserId?: string;
   data: Record<string, unknown>;
+}
+
+export interface PasswordResetJobParams {
+  username: string;
+  resetUrl: string;
+  expiresMinutes: number;
+}
+
+export interface EmailJobPayload {
+  type: 'password_reset';
+  to: string;
+  params: PasswordResetJobParams;
 }
 
 export interface AuditJobPayload {

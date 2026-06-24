@@ -2,6 +2,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
 import { isCorsOriginAllowed, parseCorsOrigins } from './config/cors.util';
 import { APP } from './shared/constants/app.constants';
@@ -25,6 +27,7 @@ async function bootstrap() {
 
   logger.log(`CORS allowed origins: ${corsOrigins.join(', ')}`);
 
+  app.use(cookieParser());
   app.setGlobalPrefix('api/v1');
   app.enableCors({
     origin: (requestOrigin, callback) => {

@@ -5,8 +5,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, createHash } from 'crypto';
-import { EmailService } from '../../infrastructure/email/email.service';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { QueueService } from '../../infrastructure/queue/queue.service';
 import { AppError, ERRORS } from '../../shared/errors';
 import { RedisService } from '../../infrastructure/redis/redis.service';
 import { AuditService } from '../audit/audit.service';
@@ -51,7 +51,7 @@ export class AuthService {
     private configService: ConfigService,
     private redisService: RedisService,
     private auditService: AuditService,
-    private emailService: EmailService,
+    private queueService: QueueService,
     private passwordResetRateLimiter: PasswordResetRateLimiterService,
     @InjectModel(RefreshToken.name)
     private refreshTokenModel: Model<RefreshTokenDocument>,
@@ -67,47 +67,54 @@ export class AuthService {
       username: dto.username,
     });
 
+    // assertCanCreateTenant atomically increments the Redis counter first.
+    // If anything below fails we must rollback so the slot isn't permanently lost.
     await this.tenantsService.assertCanCreateTenant();
 
-    const existing = await this.usersService.findByEmail(dto.email);
-    if (existing) {
-      throw new AppError(ERRORS.USER.EMAIL_IN_USE);
+    try {
+      const existing = await this.usersService.findByEmail(dto.email);
+      if (existing) {
+        throw new AppError(ERRORS.USER.EMAIL_IN_USE);
+      }
+
+      const slug = this.tenantsService.slugify(dto.tenantName);
+      const tenant = await this.tenantsService.create(dto.tenantName, slug);
+
+      await this.rbacService.seedRolesForTenant(tenant._id.toString());
+      await this.settingsService.seedForTenant(tenant._id.toString());
+      await this.priceTiersService.seedForTenant(tenant._id.toString());
+
+      const owner = await this.usersService.createOwner(
+        tenant._id.toString(),
+        dto.username,
+        dto.email,
+        dto.password,
+      );
+
+      tenant.owner_user_id = owner._id;
+      await tenant.save();
+
+      const tokens = await this.issueTokens(owner);
+      this.auditService.emit({
+        tenantId: tenant._id.toString(),
+        userId: owner._id.toString(),
+        action: AUDIT_ACTIONS.LOGIN,
+        module: AUDIT_MODULES.AUTH,
+        metadata: { event: 'REGISTER_TENANT' },
+      });
+      return {
+        ...tokens,
+        user: this.usersService.toProfile(owner),
+        tenant: {
+          id: tenant._id,
+          name: tenant.name,
+          slug: tenant.slug,
+        },
+      };
+    } catch (error) {
+      await this.tenantsService.rollbackTenantCount();
+      throw error;
     }
-
-    const slug = this.tenantsService.slugify(dto.tenantName);
-    const tenant = await this.tenantsService.create(dto.tenantName, slug);
-
-    await this.rbacService.seedRolesForTenant(tenant._id.toString());
-    await this.settingsService.seedForTenant(tenant._id.toString());
-    await this.priceTiersService.seedForTenant(tenant._id.toString());
-
-    const owner = await this.usersService.createOwner(
-      tenant._id.toString(),
-      dto.username,
-      dto.email,
-      dto.password,
-    );
-
-    tenant.owner_user_id = owner._id;
-    await tenant.save();
-
-    const tokens = await this.issueTokens(owner);
-    this.auditService.emit({
-      tenantId: tenant._id.toString(),
-      userId: owner._id.toString(),
-      action: AUDIT_ACTIONS.LOGIN,
-      module: AUDIT_MODULES.AUTH,
-      metadata: { event: 'REGISTER_TENANT' },
-    });
-    return {
-      ...tokens,
-      user: this.usersService.toProfile(owner),
-      tenant: {
-        id: tenant._id,
-        name: tenant.name,
-        slug: tenant.slug,
-      },
-    };
   }
 
   async login(dto: LoginDto) {
@@ -287,15 +294,13 @@ export class AuthService {
       this.configService.get<string>('frontendUrl') ?? 'http://localhost:3001';
     const resetUrl = `${frontendUrl.replace(/\/+$/, '')}/reset-password?token=${encodeURIComponent(rawToken)}`;
 
-    try {
-      await this.emailService.sendPasswordReset(user.email, {
-        username: user.username,
-        resetUrl,
-        expiresMinutes,
-      });
-    } catch {
-      throw new AppError(ERRORS.AUTH.EMAIL_SEND_FAILED);
-    }
+    // Enqueue with 3 retries and exponential backoff so transient Resend errors
+    // don't fail the request — the job will retry automatically.
+    await this.queueService.enqueueEmail({
+      type: 'password_reset',
+      to: user.email,
+      params: { username: user.username, resetUrl, expiresMinutes },
+    });
 
     this.auditService.emit({
       tenantId: user.tenant_id.toString(),

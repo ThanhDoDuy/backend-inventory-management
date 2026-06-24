@@ -3,7 +3,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { MongooseModule } from '@nestjs/mongoose';
-import { EmailModule } from '../../infrastructure/email/email.module';
 import { PriceTiersModule } from '../price-tiers/price-tiers.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { UsersModule } from '../users/users.module';
@@ -38,7 +37,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       { name: RefreshToken.name, schema: RefreshTokenSchema },
       { name: PasswordResetToken.name, schema: PasswordResetTokenSchema },
     ]),
-    EmailModule,
     UsersModule,
     TenantsModule,
     SettingsModule,

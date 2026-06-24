@@ -1,34 +1,57 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
 import { AppLoggerService } from '../../infrastructure/logger/app-logger.service';
+import { PlatformCounterService } from '../../infrastructure/redis/platform-counter.service';
 import { AppError, ERRORS } from '../../shared/errors';
 import { Tenant, TenantDocument } from './schemas/tenant.schema';
 import { TenantStatus } from '../../shared/constants/roles.enum';
 
 @Injectable()
-export class TenantsService {
+export class TenantsService implements OnModuleInit {
   constructor(
     @InjectModel(Tenant.name) private tenantModel: Model<TenantDocument>,
     private configService: ConfigService,
     private readonly logger: AppLoggerService,
+    private readonly platformCounter: PlatformCounterService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    // Seed the Redis counter from the DB on startup. NX ensures this is a no-op
+    // if the key already exists (e.g. a rolling restart).
+    const count = await this.tenantModel.countDocuments({
+      status: TenantStatus.ACTIVE,
+    });
+    await this.platformCounter.syncFromDb(count);
+    this.logger.step('TenantsService.onModuleInit', { tenantCount: count });
+  }
 
   async countActive(): Promise<number> {
     return this.tenantModel.countDocuments({ status: TenantStatus.ACTIVE });
   }
 
+  /**
+   * Atomically reserve a slot by incrementing the Redis counter BEFORE the DB
+   * write. If the slot is over the cap, decrement immediately and throw.
+   * The caller must call rollbackTenantCount() if the subsequent DB write fails.
+   */
   async assertCanCreateTenant(): Promise<void> {
     this.logger.step('TenantsService.assertCanCreateTenant', {});
 
     const max = this.configService.get<number>('maxTenants') ?? 20;
-    const count = await this.countActive();
-    if (count >= max) {
+    const next = await this.platformCounter.increment();
+
+    if (next > max) {
+      await this.platformCounter.decrement();
       throw new AppError(ERRORS.TENANT.LIMIT_REACHED, {
         message: `Platform capacity reached (${max} stores max)`,
       });
     }
+  }
+
+  async rollbackTenantCount(): Promise<void> {
+    await this.platformCounter.decrement();
   }
 
   async create(name: string, slug: string): Promise<TenantDocument> {
