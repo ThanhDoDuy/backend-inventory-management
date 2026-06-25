@@ -13,7 +13,6 @@ import {
   InventoryBalanceDocument,
 } from '../inventory/schemas/inventory-balance.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
-import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
 import { Setting, SettingDocument } from '../settings/schemas/setting.schema';
 import {
   APP,
@@ -35,7 +34,6 @@ export class ReportsService {
     @InjectModel(InventoryBalance.name)
     private balanceModel: Model<InventoryBalanceDocument>,
     @InjectModel(Product.name) private productModel: Model<ProductDocument>,
-    @InjectModel(Customer.name) private customerModel: Model<CustomerDocument>,
     @InjectModel(Setting.name) private settingModel: Model<SettingDocument>,
     private redisService: RedisService,
     private auditService: AuditService,
@@ -560,15 +558,7 @@ export class ReportsService {
     const getSetting = (key: string, fallback = '') =>
       taxSettings.find((s) => s.key === key)?.value ?? fallback;
 
-    const group1Label = getSetting('tax.revenue_group_1_label', 'Bán hàng doanh nghiệp');
-    const group2Label = getSetting('tax.revenue_group_2_label', 'Bán hàng khách vãng lai');
-    const group1Types = new Set(
-      getSetting('tax.revenue_group_1_types', 'COMPANY,GROUP').split(',').map((t) => t.trim()),
-    );
-    const group2Types = new Set(
-      getSetting('tax.revenue_group_2_types', 'INDIVIDUAL,NONE').split(',').map((t) => t.trim()),
-    );
-
+    // Group by date only — one row per day, total all invoices regardless of customer type
     const rawRows = await this.invoiceModel.aggregate([
       {
         $match: {
@@ -579,22 +569,7 @@ export class ReportsService {
         },
       },
       {
-        $lookup: {
-          from: 'customers',
-          localField: 'customer_id',
-          foreignField: '_id',
-          as: 'customer',
-        },
-      },
-      {
         $addFields: {
-          customer_type: {
-            $cond: {
-              if: { $gt: [{ $size: '$customer' }, 0] },
-              then: { $arrayElemAt: ['$customer.customer_type', 0] },
-              else: 'NONE',
-            },
-          },
           date_str: {
             $dateToString: { format: '%Y-%m-%d', date: '$created_at', timezone: '+07:00' },
           },
@@ -602,35 +577,21 @@ export class ReportsService {
       },
       {
         $group: {
-          _id: { date: '$date_str', customer_type: '$customer_type' },
+          _id: '$date_str',
           count: { $sum: 1 },
           amount: { $sum: '$total' },
         },
       },
-      { $sort: { '_id.date': 1, '_id.customer_type': 1 } },
+      { $sort: { _id: 1 } },
     ]);
 
-    // Map customer_type → group label, then merge rows with the same (date, label)
-    const mergedMap = new Map<string, { date: string; label: string; count: number; amount: number }>();
-    for (const row of rawRows) {
-      const customerType: string = row._id.customer_type;
-      const label = group1Types.has(customerType) ? group1Label : group2Label;
-      const key = `${row._id.date}||${label}`;
-      const existing = mergedMap.get(key);
-      if (existing) {
-        existing.count += row.count;
-        existing.amount += row.amount;
-      } else {
-        mergedMap.set(key, { date: row._id.date, label, count: row.count, amount: row.amount });
-      }
-    }
-
-    const rows = Array.from(mergedMap.values()).sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      if (a.label === group1Label && b.label !== group1Label) return -1;
-      if (a.label !== group1Label && b.label === group1Label) return 1;
-      return 0;
-    });
+    // Label: "Doanh thu ngày N" — sequential index starting at 1
+    const rows = rawRows.map((row, i) => ({
+      date: row._id as string,
+      label: `Doanh thu ngày ${i + 1}`,
+      count: row.count as number,
+      amount: row.amount as number,
+    }));
 
     const total = rows.reduce((sum, r) => sum + r.amount, 0);
 

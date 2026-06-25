@@ -7,7 +7,6 @@ import {
   InventoryBalanceSchema,
 } from '../inventory/schemas/inventory-balance.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
-import { Customer, CustomerSchema } from '../customers/schemas/customer.schema';
 import { Setting, SettingSchema } from '../settings/schemas/setting.schema';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
@@ -19,7 +18,6 @@ import { ReportsService } from './reports.service';
       { name: InvoiceItem.name, schema: InvoiceItemSchema },
       { name: InventoryBalance.name, schema: InventoryBalanceSchema },
       { name: Product.name, schema: ProductSchema },
-      { name: Customer.name, schema: CustomerSchema },
       { name: Setting.name, schema: SettingSchema },
     ]),
   ],
