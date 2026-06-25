@@ -50,7 +50,9 @@ import {
   Notification,
   NotificationSchema,
 } from '../modules/notifications/schemas/notification.schema';
+import { Setting, SettingSchema } from '../modules/settings/schemas/setting.schema';
 import { SeedDemoDataService } from './seed-demo-data.service';
+import { SeedTaxReportService } from './seed-tax-report.service';
 
 @Module({
   imports: [
@@ -81,9 +83,10 @@ import { SeedDemoDataService } from './seed-demo-data.service';
       { name: InventoryBalance.name, schema: InventoryBalanceSchema },
       { name: InventoryTransaction.name, schema: InventoryTransactionSchema },
       { name: Notification.name, schema: NotificationSchema },
+      { name: Setting.name, schema: SettingSchema },
     ]),
   ],
-  providers: [SeedDemoDataService],
-  exports: [SeedDemoDataService],
+  providers: [SeedDemoDataService, SeedTaxReportService],
+  exports: [SeedDemoDataService, SeedTaxReportService],
 })
 export class SeedDemoModule {}

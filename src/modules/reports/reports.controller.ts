@@ -64,6 +64,16 @@ export class ReportsController {
     );
   }
 
+  @Get('tax/s1a-hkd')
+  @RequirePermission(PERMISSIONS.REPORTS.VIEW)
+  getTaxS1aHkd(
+    @CurrentUser() user: RequestUser,
+    @Query('year') year?: string,
+  ) {
+    const reportYear = year ? parseInt(year, 10) : new Date().getFullYear();
+    return this.reportsService.getTaxS1aHkd(user.tenantId, reportYear);
+  }
+
   @Get('export')
   @RequirePermission(PERMISSIONS.REPORTS.EXPORT)
   @Header('Content-Type', 'text/csv')

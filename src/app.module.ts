@@ -7,6 +7,8 @@ import {
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { RedisThrottlerStorage } from './infrastructure/redis/redis-throttler-storage.service';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
 import { LoggerModule } from './infrastructure/logger/logger.module';
@@ -58,6 +60,16 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
       }),
     }),
     RedisModule,
+    ThrottlerModule.forRootAsync({
+      inject: [RedisThrottlerStorage],
+      useFactory: (storage: RedisThrottlerStorage) => ({
+        throttlers: [
+          // Global default: 120 requests per 60 seconds per IP
+          { name: 'global', ttl: 60_000, limit: 120 },
+        ],
+        storage,
+      }),
+    }),
     CloudinaryModule,
     HealthModule,
     AuditModule,
@@ -80,6 +92,7 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
     SeedDemoModule,
   ],
   providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
     { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },

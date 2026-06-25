@@ -1,5 +1,6 @@
 import {
   IsEmail,
+  IsOptional,
   IsString,
   MinLength,
 } from 'class-validator';
@@ -28,8 +29,10 @@ export class LoginDto {
 }
 
 export class RefreshTokenDto {
+  // Optional: token may arrive via HttpOnly cookie instead of the request body.
+  @IsOptional()
   @IsString()
-  refresh_token: string;
+  refresh_token?: string;
 }
 
 export class ChangePasswordDto {
