@@ -515,6 +515,16 @@ export class InvoicesService {
 
       await session.commitTransaction();
 
+      this.auditService.emit({
+        tenantId,
+        userId: access.userId,
+        action: AUDIT_ACTIONS.CANCEL_INVOICE,
+        module: AUDIT_MODULES.INVOICE,
+        entityId: id,
+        oldValue: { status: InvoiceStatus.PAID },
+        newValue: { status: InvoiceStatus.CANCELLED, reason: dto.reason },
+      });
+
       return this.getById(tenantId, id, access);
     } catch (error) {
       await session.abortTransaction();
@@ -648,6 +658,20 @@ export class InvoicesService {
       }
 
       await session.commitTransaction();
+
+      this.auditService.emit({
+        tenantId,
+        userId: access.userId,
+        action: AUDIT_ACTIONS.REFUND_INVOICE,
+        module: AUDIT_MODULES.INVOICE,
+        entityId: id,
+        newValue: {
+          refund_amount: refundAmount,
+          items: refundLines,
+          fully_refunded: fullyRefunded,
+        },
+        metadata: { reason: dto.reason?.trim() ?? '' },
+      });
 
       return this.getById(tenantId, id, access);
     } catch (error) {

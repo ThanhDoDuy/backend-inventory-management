@@ -8,6 +8,21 @@ import { sanitize } from './sanitize.util';
 const UUID_V4_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function resolveRequestId(header: string | string[] | undefined): string {
+  if (typeof header === 'string' && UUID_V4_REGEX.test(header)) {
+    return header;
+  }
+  return randomUUID();
+}
+
+function resolveClientIp(req: Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.length > 0) {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip ?? req.socket.remoteAddress ?? '';
+}
+
 @Injectable()
 export class RequestIdMiddleware implements NestMiddleware {
   constructor(
@@ -16,14 +31,17 @@ export class RequestIdMiddleware implements NestMiddleware {
   ) {}
 
   use(req: Request, res: Response, next: NextFunction): void {
-    const header = req.headers['x-request-id'];
-    const incoming =
-      typeof header === 'string' && UUID_V4_REGEX.test(header)
-        ? header
-        : randomUUID();
+    const incoming = resolveRequestId(req.headers['x-request-id']);
+    const correlationHeader = req.headers['x-correlation-id'];
+    const correlationId =
+      typeof correlationHeader === 'string' &&
+      UUID_V4_REGEX.test(correlationHeader)
+        ? correlationHeader
+        : incoming;
 
     req.requestId = incoming;
     res.setHeader('x-request-id', incoming);
+    res.setHeader('x-correlation-id', correlationId);
 
     const path = req.originalUrl.split('?')[0];
     const isHealth = path.includes('/health');
@@ -31,8 +49,15 @@ export class RequestIdMiddleware implements NestMiddleware {
     this.requestContext.run(
       {
         requestId: incoming,
+        correlationId,
         method: req.method,
         path: req.originalUrl,
+        ipAddress: resolveClientIp(req),
+        userAgent:
+          typeof req.headers['user-agent'] === 'string'
+            ? req.headers['user-agent']
+            : '',
+        source: 'API',
       },
       () => {
         if (!isHealth) {

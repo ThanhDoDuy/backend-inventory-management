@@ -19,6 +19,7 @@ import {
 @Injectable()
 export class QueueService implements OnModuleInit, OnModuleDestroy {
   private auditQueue?: Queue;
+  private auditDlq?: Queue;
   private notificationQueue?: Queue;
   private emailQueue?: Queue;
   private auditWorker?: Worker;
@@ -37,7 +38,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     if (this.seedMode) {
       this.logger.step('QueueService.initialized', {
-        mode: 'seed (queues disabled)',
+        mode: 'seed (queues disabled, audit sync fallback)',
       });
       return;
     }
@@ -46,6 +47,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     const connection = { url, maxRetriesPerRequest: null };
 
     this.auditQueue = new Queue(APP.queue.audit, { connection });
+    this.auditDlq = new Queue(APP.queue.auditDlq, { connection });
     this.notificationQueue = new Queue(APP.queue.notification, { connection });
     this.emailQueue = new Queue(APP.queue.email, { connection });
 
@@ -85,8 +87,14 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     );
 
     this.auditWorker.on('failed', (job, error) => {
+      const maxAttempts = job?.opts.attempts ?? APP.queue.auditAttempts;
+      if (job && job.attemptsMade >= maxAttempts) {
+        void this.moveAuditToDlq(job.data as AuditJobPayload, error, job.id);
+      }
+
       this.logger.error('QueueService.auditWorker.failed', {
         jobId: job?.id,
+        attempts: job?.attemptsMade,
         error: error.message,
       });
     });
@@ -108,17 +116,24 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
 
     this.logger.step('QueueService.initialized', {
       auditQueue: APP.queue.audit,
+      auditDlq: APP.queue.auditDlq,
       notificationQueue: APP.queue.notification,
       emailQueue: APP.queue.email,
     });
   }
 
   async enqueueAudit(payload: AuditJobPayload): Promise<void> {
-    if (this.seedMode || !this.auditQueue) {
+    if (!this.auditQueue) {
+      await this.auditPersistenceService.write(payload);
       return;
     }
 
     await this.auditQueue.add('audit', payload, {
+      attempts: APP.queue.auditAttempts,
+      backoff: {
+        type: 'exponential',
+        delay: APP.queue.auditBackoffMs,
+      },
       removeOnComplete: APP.queue.removeOnComplete,
       removeOnFail: APP.queue.removeOnFail,
     });
@@ -162,8 +177,33 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       this.notificationWorker?.close(),
       this.emailWorker?.close(),
       this.auditQueue?.close(),
+      this.auditDlq?.close(),
       this.notificationQueue?.close(),
       this.emailQueue?.close(),
     ]);
+  }
+
+  private async moveAuditToDlq(
+    payload: AuditJobPayload,
+    error: Error,
+    jobId?: string,
+  ): Promise<void> {
+    if (!this.auditDlq) {
+      return;
+    }
+
+    try {
+      await this.auditDlq.add('audit-failed', {
+        original_payload: payload,
+        error_message: error.message,
+        failed_at: new Date().toISOString(),
+        original_job_id: jobId,
+      });
+    } catch (dlqError) {
+      this.logger.error('QueueService.auditDlq.enqueue_failed', {
+        eventId: payload.event_id,
+        error: (dlqError as Error).message,
+      });
+    }
   }
 }

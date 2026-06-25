@@ -27,6 +27,9 @@ export class AuditController {
     @Query('userId') userId?: string,
     @Query('action') action?: string,
     @Query('module') module?: string,
+    @Query('entityId') entityId?: string,
+    @Query('correlationId') correlationId?: string,
+    @Query('category') category?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
@@ -36,9 +39,26 @@ export class AuditController {
       userId,
       action,
       module,
+      entityId,
+      correlationId,
+      category,
       from,
       to,
     });
+  }
+
+  @Get('correlation/:correlationId')
+  @RequirePermission(PERMISSIONS.AUDIT.VIEW)
+  listByCorrelation(
+    @CurrentUser() user: RequestUser,
+    @Param('correlationId') correlationId: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.auditService.listByCorrelation(
+      user.tenantId,
+      correlationId,
+      limit ? parseInt(limit, 10) : 50,
+    );
   }
 
   @Get('export')
@@ -51,6 +71,9 @@ export class AuditController {
     @Query('userId') userId?: string,
     @Query('action') action?: string,
     @Query('module') module?: string,
+    @Query('entityId') entityId?: string,
+    @Query('correlationId') correlationId?: string,
+    @Query('category') category?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
@@ -65,6 +88,9 @@ export class AuditController {
       userId,
       action,
       module,
+      entityId,
+      correlationId,
+      category,
       from,
       to,
     });

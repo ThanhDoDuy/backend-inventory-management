@@ -182,6 +182,20 @@ export class PurchaseOrdersService {
 
       await session.commitTransaction();
 
+      this.auditService.emit({
+        tenantId,
+        userId,
+        action: AUDIT_ACTIONS.CREATE_PO,
+        module: AUDIT_MODULES.PO,
+        entityId: purchaseOrder._id.toString(),
+        newValue: {
+          po_number: poNumber,
+          supplier_id: dto.supplierId,
+          total_amount: totalAmount,
+          item_count: dto.items.length,
+        },
+      });
+
       return this.getById(tenantId, purchaseOrder._id.toString());
     } catch (error) {
       await session.abortTransaction();
@@ -289,6 +303,16 @@ export class PurchaseOrdersService {
       purchaseOrder.status = PoStatus.APPROVED;
       purchaseOrder.modified_by = new Types.ObjectId(userId);
       await purchaseOrder.save();
+
+      this.auditService.emit({
+        tenantId,
+        userId,
+        action: AUDIT_ACTIONS.APPROVE_PO,
+        module: AUDIT_MODULES.PO,
+        entityId: id,
+        oldValue: { status: PoStatus.DRAFT },
+        newValue: { status: PoStatus.APPROVED },
+      });
 
       return this.getById(tenantId, id);
     });
