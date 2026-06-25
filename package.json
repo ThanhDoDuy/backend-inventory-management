@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "seed:demo": "npm run build && node dist/scripts/seed-demo.js",
     "seed:demo:reset": "npm run build && node dist/scripts/seed-demo.js --reset",
+    "seed:tax-report": "npm run build && node dist/scripts/seed-tax-report.js",
     "migrate:product-images": "npm run build && node dist/scripts/migrate-product-images.js"
   },
   "dependencies": {
